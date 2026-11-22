@@ -212,6 +212,7 @@ Check &PosService::splitOff(qint64 fromId)
     n.allergies = from.allergies;
     n.seatAllergies = from.seatAllergies;
     n.seatNames = from.seatNames;
+    n.seatCourses = from.seatCourses;
     n.rush = from.rush;
     n.vip = from.vip;
     n.firedCourse = from.firedCourse;

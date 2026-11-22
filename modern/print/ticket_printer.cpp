@@ -72,8 +72,8 @@ void TicketPrinter::printKitchen(const PosSettings &settings, const Check &check
     const i18n::Scope language(i18n::printLanguage(QString::fromStdString(settings.language)));   // the store's, not the server's
     // Group by station; items without a printer (or with an unknown one) go
     // to the kitchen, and nowhere if there is no kitchen printer either.
-    // A tuckshop's order with a child's items on it: a slip a bag (a child,
-    // a break), everything in the bag on it, not only what the kitchen makes.
+    // A tuckshop's order packed into bags: a slip a bag (a child's, for a
+    // break), everything in the bag on it, not only what the kitchen makes.
     const bool bags = settings.servesTuckshop()
                       && std::ranges::any_of(lines, [](const OrderLine &l) { return l.seat > 0 && !l.isComment(); });
     std::map<std::string, std::vector<OrderLine>> byStation;
@@ -95,15 +95,18 @@ void TicketPrinter::printKitchen(const PosSettings &settings, const Check &check
                  (voids ? u"Void ticket %1"_s : u"Ticket %1"_s).arg(QString::fromStdString(check.label)));
             continue;
         }
-        // The first break's bags first, a child after the other (what's
-        // nobody's in particular before them); each in the order rung in.
+        // What's in no bag first, then the first break's bags, a bag after
+        // the other; each in the order rung in.
         std::map<std::pair<int, int>, std::vector<OrderLine>> byBag;   // (course, seat)
         for (const OrderLine &l : stationLines)
-            byBag[{l.course, l.seat}].push_back(l);
+            byBag[{l.seat > 0 ? l.course : 0, l.seat}].push_back(l);
         for (const auto &[key, bagLines] : byBag) {
             if (std::ranges::all_of(bagLines, [](const OrderLine &l) { return l.isComment(); }))
                 continue;   // a note with nothing to pack
-            const Bag bag{check.seatName(key.second), settings.tuckshopBreak(key.first)};
+            const int seat = key.second;
+            const std::string name = check.seatName(seat);
+            const Bag bag{seat < 1 ? std::string() : !name.empty() ? name : ctx.tr("Bag %1", {std::to_string(seat)}),
+                          seat < 1 ? std::string() : settings.tuckshopBreak(key.first)};
             send(settings, *p, kitchenTicket(check, bagLines, p->name, voids, ctx, &bag),
                  (voids ? u"Void bag %1 %2"_s : u"Bag %1 %2"_s)
                      .arg(QString::fromStdString(check.label), QString::fromStdString(bag.who)).trimmed());

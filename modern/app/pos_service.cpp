@@ -2387,13 +2387,21 @@ QVariantMap PosService::checkInfo() const
              {u"bornBy"_s, i18n::locale().toString(QDateTime::fromMSecsSinceEpoch(now()).date().addYears(-s_->settings.idAge),
                                                     QLocale::LongFormat)}} : QVariant()},
         {u"allergies"_s, [c] { QStringList a; for (const std::string &x : c->allergies) a << qs(x); return a; }()},
-        // Seat -> who it is ({"2": "Sam 3B"}): a tuckshop's children.
+        // Seat -> who it is ({"2": "Sam 3B"}), and a tuckshop's bag -> its break ({"2": 2}).
         {u"seatNames"_s, [c] {
              QVariantMap m;
              for (const auto &[seat, name] : c->seatNames)
                  m.insert(QString::number(seat), qs(name));
              return m;
          }()},
+        {u"seatBreaks"_s, [c] {
+             QVariantMap m;
+             for (const auto &[seat, course] : c->seatCourses)
+                 m.insert(QString::number(seat), course);
+             return m;
+         }()},
+        // A line was touched: a seat touched next takes it.
+        {u"touched"_s, lineTouched_ && c->line(selectedLine_) != nullptr},
         // Seat -> its guest's allergen ids ({"2": ["peanuts"]}).
         {u"seatAllergies"_s, [c] {
              QVariantMap m;

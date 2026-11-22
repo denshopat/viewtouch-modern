@@ -314,14 +314,22 @@ struct Check {
     std::vector<std::string> allergies;   // the guest's (allergen ids): the kitchen sees them
     // One guest's at the table (seat -> allergen ids): their items are marked.
     std::map<int, std::vector<std::string>> seatAllergies;
-    // Who a seat is (seat -> a name), when someone said. A tuckshop's: the
-    // child a bag is for ("Sam 3B"): the order, the kitchen and the slips
-    // say the name instead of "S2".
+    // Who a seat is (seat -> a name), when someone said: the order, the
+    // kitchen and the tickets say the name instead of "S2". A tuckshop's
+    // seats are bags: the child a bag is for ("Sam 3B").
     std::map<int, std::string> seatNames;
     std::string seatName(int seat) const
     {
         const auto it = seatNames.find(seat);
         return it == seatNames.end() ? std::string() : it->second;
+    }
+    // A tuckshop's bag (a seat): the break it's for (the course of what's
+    // in it; 1, the first break, until someone says).
+    std::map<int, int> seatCourses;
+    int seatCourse(int seat) const
+    {
+        const auto it = seatCourses.find(seat);
+        return it == seatCourses.end() ? 1 : it->second;
     }
     // What a seat's items must not have: the whole table's and that seat's.
     std::vector<std::string> allergiesFor(int seat) const

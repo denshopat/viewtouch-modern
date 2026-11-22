@@ -223,6 +223,11 @@ QJsonObject toJson(const Check &c)
             for (const auto &[seat, name] : c.seatNames)
                 o.insert(QString::number(seat), qs(name));
             return o;
+        }()}, {u"seatCourses"_s, [&c] {
+            QJsonObject o;
+            for (const auto &[seat, course] : c.seatCourses)
+                o.insert(QString::number(seat), course);
+            return o;
         }()}, {u"coupons"_s, strings(c.coupons)}, {u"hold"_s, [&c] {
             if (c.hold.empty())
                 return QJsonValue();
@@ -396,6 +401,10 @@ std::optional<Check> checkFromJson(const QJsonObject &o)
     for (auto it = seatNames.begin(); it != seatNames.end(); ++it)
         if (const int n = it.key().toInt(); n > 0 && !it.value().toString().isEmpty())
             c.seatNames[n] = ss(it.value().toString());
+    const QJsonObject seatCourses = o.value(u"seatCourses").toObject();
+    for (auto it = seatCourses.begin(); it != seatCourses.end(); ++it)
+        if (const int n = it.key().toInt(); n > 0 && it.value().toInt() > 0)
+            c.seatCourses[n] = std::clamp(it.value().toInt(), 1, 9);
     c.coupons = strings(o.value(u"coupons").toArray());
     if (const QJsonObject h = o.value(u"hold").toObject(); !h.isEmpty()) {
         c.hold.reference = ss(h.value(u"reference").toString());

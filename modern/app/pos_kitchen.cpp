@@ -74,9 +74,15 @@ QVariantList PosService::kitchenTicketsNow() const
         return a.check->rush != b.check->rush ? a.check->rush : a.sentAt < b.sentAt;
     });
 
-    // A tuckshop's: the break a child's item is for ("Little Lunch").
-    const auto bagBreak = [this](const OrderLine &l) {
-        return s_->settings.servesTuckshop() && (l.seat > 0 || l.course > 1) ? qs(s_->settings.tuckshopBreak(l.course)) : QString();
+    // A tuckshop's: the break an item's bag is for ("Little Lunch"), and
+    // whose the bag is ("Bag 2" until someone says).
+    const bool bags = s_->settings.servesTuckshop();
+    const auto bagBreak = [this, bags](const OrderLine &l) {
+        return bags && l.seat > 0 ? qs(s_->settings.tuckshopBreak(l.course)) : QString();
+    };
+    const auto whose = [bags](const Check &c, const OrderLine &l) {
+        const QString name = qs(c.seatName(l.seat));
+        return bags && l.seat > 0 && name.isEmpty() ? tr("Bag %1").arg(l.seat) : name;
     };
     QVariantList out;
     for (const Ticket &t : tickets) {
@@ -97,7 +103,7 @@ QVariantList PosService::kitchenTicketsNow() const
                                          {u"modifiers"_s, mods}, {u"comment"_s, l->isComment()}, {u"note"_s, qs(l->note)},
                                          {u"printer"_s, qs(l->printerOf())}, {u"station"_s, qs(stationOf(*l))},
                                          {u"seat"_s, l->seat}, {u"course"_s, l->course},
-                                         {u"who"_s, qs(t.check->seatName(l->seat))}, {u"forBreak"_s, bagBreak(*l)}});
+                                         {u"who"_s, whose(*t.check, *l)}, {u"forBreak"_s, bagBreak(*l)}});
             // Its parts made at other stations (a combo's fries): lines of their own there.
             for (const Modifier &m : l->modifiers) {
                 if (isPart(*l, m) && !m.made)
@@ -107,7 +113,7 @@ QVariantList PosService::kitchenTicketsNow() const
                                              {u"comment"_s, false}, {u"part"_s, true},
                                              {u"printer"_s, qs(l->printerOf())}, {u"station"_s, qs(m.station)},
                                              {u"seat"_s, l->seat}, {u"course"_s, l->course},
-                                             {u"who"_s, qs(t.check->seatName(l->seat))}, {u"forBreak"_s, bagBreak(*l)}});
+                                             {u"who"_s, whose(*t.check, *l)}, {u"forBreak"_s, bagBreak(*l)}});
             }
         }
         // Late past its slowest item's time (set, or learned) plus two minutes;

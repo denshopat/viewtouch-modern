@@ -162,10 +162,10 @@ struct PosSettings {
     // (logins, the items first: no tables, no kitchen) or "tuckshop" (a
     // food truck's counter where one order is several children's bags).
     std::string serviceMode;
-    // A tuckshop's breaks, the first one first. One order holds the bags of
-    // several children: an item is a child's (its seat, named:
-    // Check::seatNames) and for a break (its course: 1 the first of these).
-    // Each child's bag for each break is a slip of its own.
+    // A tuckshop's breaks, the first one first. One order is packed into
+    // bags: an item goes in a bag (its seat), and a bag is a child's
+    // (Check::seatNames) for a break (Check::seatCourses, its lines'
+    // course: 1 the first of these). Each bag is a slip of its own.
     std::vector<std::string> tuckshopBreaks{"Little Lunch", "Big Lunch"};
     // The store is a tuckshop, or one of its screens serves as one.
     bool servesTuckshop() const

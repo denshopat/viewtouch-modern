@@ -21,7 +21,9 @@ using namespace vt;
 
 // A tuckshop: a food truck's counter where one order is several children's
 // bags. A parent orders for two children, each a bag for Little Lunch and
-// one for Big Lunch, and pays once; every bag is a slip of its own.
+// one for Big Lunch, and pays once. The order is rung in, then packed: an
+// item goes in a bag, and a bag is a child's for a break; every bag is a
+// slip of its own.
 
 namespace {
 
@@ -96,33 +98,83 @@ TEST_CASE("Tuckshop: a food truck's counter, its breaks by name", "[tuckshop]")
     CHECK(other.serviceInfo()[u"breaks"_s].toStringList().isEmpty());
 }
 
-TEST_CASE("Tuckshop: an item is a child's, for a break", "[tuckshop]")
+// The whole order rung in, then packed: Sam's and Mia's, a bag each for
+// Little Lunch and Big Lunch. Returns the lines' ids, as rung in.
+static QList<qint64> ringAndPack(app::PosService &pos)
+{
+    for (const QString &item : {u"classic-burger"_s, u"water"_s, u"house-salad"_s, u"cheeseburger"_s, u"soda"_s})
+        REQUIRE(pos.addItem(item));
+    QList<qint64> ids;
+    for (const QVariant &v : pos.lines())
+        ids << v.toMap()[u"id"_s].toLongLong();
+    // Touch a line, then a bag: it goes in it.
+    const auto put = [&](int line, int bag) {
+        pos.selectLine(ids[line]);
+        REQUIRE(pos.setSeat(bag));
+    };
+    put(0, 1);   // the burger and the water: bag 1
+    put(1, 1);
+    put(2, 2);   // the salad: bag 2
+    put(3, 3);   // the cheeseburger: bag 3
+    put(4, 4);   // the soda: bag 4
+    // Then whose each bag is, and its break.
+    REQUIRE(pos.setBag(1, u"Sam 3B"_s, 1));
+    REQUIRE(pos.setBag(2, u"Sam 3B"_s, 2));
+    REQUIRE(pos.setBag(3, u"Mia 1A"_s, 1));
+    REQUIRE(pos.setBag(4, u"Mia 1A"_s, 2));
+    return ids;
+}
+
+TEST_CASE("Tuckshop: the order rung in, then packed into bags", "[tuckshop]")
 {
     app::PosShared shared(tuckshopData(), nullptr);
     app::PosService pos(&shared, u"Tuckshop"_s);
 
-    // The first child starts the order: what's rung in next is theirs.
-    REQUIRE(pos.nameSeat(1, u"  Sam   3B "_s));
-    CHECK(pos.hasCheck());
-    CHECK(pos.checkInfo()[u"orderNumber"_s].toInt() == 1);
-    CHECK(pos.checkInfo()[u"seat"_s].toInt() == 1);
-    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Sam 3B"_s}});
+    // Rung in: everything is in no bag yet.
     REQUIRE(pos.addItem(u"classic-burger"_s));
-    REQUIRE(pos.setCourse(2));   // Big Lunch
-    REQUIRE(pos.addItem(u"house-salad"_s));
-    // The next child; the break stays the one touched last.
-    REQUIRE(pos.nameSeat(2, u"Mia"_s));
-    REQUIRE(pos.addItem(u"soda"_s));
-    REQUIRE(pos.setCourse(1));
-    REQUIRE(pos.addItem(u"cheeseburger"_s));
-    CHECK(linesOf(pos) == QStringList{u"Classic Burger/1/1"_s, u"House Salad/1/2"_s, u"Soda/2/2"_s, u"Cheeseburger/2/1"_s});
+    REQUIRE(pos.addItem(u"water"_s));
+    CHECK(linesOf(pos) == QStringList{u"Classic Burger/0/1"_s, u"Water/0/1"_s});
+    CHECK(pos.checkInfo()[u"orderNumber"_s].toInt() == 1);
+    CHECK_FALSE(pos.checkInfo()[u"touched"_s].toBool());
+    CHECK_FALSE(pos.setCourse(2));   // a break is a bag's: none in hand
+    const qint64 burger = pos.lines().at(0).toMap()[u"id"_s].toLongLong();
+    const qint64 water = pos.lines().at(1).toMap()[u"id"_s].toLongLong();
 
-    // Any item moves: touch it, then the child, then the break.
-    const qint64 salad = pos.lines().at(1).toMap()[u"id"_s].toLongLong();
-    pos.selectLine(salad);
-    REQUIRE(pos.setSeat(2));
+    // A touched line goes in the bag touched next, and is let go.
+    pos.selectLine(burger);
+    CHECK(pos.checkInfo()[u"touched"_s].toBool());
+    REQUIRE(pos.setSeat(1));
+    CHECK(linesOf(pos) == QStringList{u"Classic Burger/1/1"_s, u"Water/0/1"_s});
+    CHECK_FALSE(pos.checkInfo()[u"touched"_s].toBool());
+    CHECK(pos.checkInfo()[u"seat"_s].toInt() == 1);
+    // The bag is a child's, for a break: what's in it is for that break.
+    REQUIRE(pos.setBag(1, u"  Sam   3B "_s, 2));
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Sam 3B"_s}});
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap() == QVariantMap{{u"1"_s, 2}});
+    CHECK(linesOf(pos).at(0) == u"Classic Burger/1/2"_s);
+    // What goes in it after is too; so is what's rung in with the bag in hand.
+    pos.selectLine(water);
+    REQUIRE(pos.setSeat(1));
+    CHECK(linesOf(pos).at(1) == u"Water/1/2"_s);
+    REQUIRE(pos.addItem(u"soda"_s));
+    CHECK(linesOf(pos).at(2) == u"Soda/1/2"_s);
+    // The break keys: the bag in hand's, everything in it.
     REQUIRE(pos.setCourse(1));
-    CHECK(linesOf(pos).at(1) == u"House Salad/2/1"_s);
+    CHECK(linesOf(pos) == QStringList{u"Classic Burger/1/1"_s, u"Water/1/1"_s, u"Soda/1/1"_s});
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap()[u"1"_s].toInt() == 1);
+    REQUIRE(pos.setCourse(7));   // one of the day's: the last
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap()[u"1"_s].toInt() == 2);
+
+    // Another bag: its own break (the first until someone says); a line
+    // moved to it takes that.
+    REQUIRE(pos.setBag(1, u"Sam 3B"_s, 2));
+    pos.selectLine(water);
+    REQUIRE(pos.setSeat(2));
+    CHECK(linesOf(pos).at(1) == u"Water/2/1"_s);
+    // Out of every bag again.
+    pos.selectLine(water);
+    REQUIRE(pos.setSeat(0));
+    CHECK(linesOf(pos).at(1) == u"Water/0/1"_s);
 
     // A break isn't a course to fire later: nothing is held.
     CHECK(pos.checkInfo()[u"heldCount"_s].toInt() == 0);
@@ -130,27 +182,45 @@ TEST_CASE("Tuckshop: an item is a child's, for a break", "[tuckshop]")
         CHECK_FALSE(v.toMap()[u"held"_s].toBool());
 
     // A name put right; an empty one is nobody's in particular again.
-    REQUIRE(pos.nameSeat(2, u"Mia 1A"_s));
-    CHECK(pos.checkInfo()[u"seatNames"_s].toMap()[u"2"_s].toString() == u"Mia 1A"_s);
-    REQUIRE(pos.nameSeat(2, QString()));
-    CHECK_FALSE(pos.checkInfo()[u"seatNames"_s].toMap().contains(u"2"_s));
-    CHECK_FALSE(pos.nameSeat(0, u"Nobody"_s));
+    REQUIRE(pos.setBag(1, u"Sam 3C"_s, 2));
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap()[u"1"_s].toString() == u"Sam 3C"_s);
+    REQUIRE(pos.setBag(1, QString(), 2));
+    CHECK_FALSE(pos.checkInfo()[u"seatNames"_s].toMap().contains(u"1"_s));
+    CHECK_FALSE(pos.setBag(0, u"Nobody"_s, 1));
+}
 
-    // The names are the check's: saved with it.
-    REQUIRE(pos.nameSeat(2, u"Mia 1A"_s));
+TEST_CASE("Tuckshop: two children, a bag each a break, paid once", "[tuckshop]")
+{
+    app::PosShared shared(tuckshopData(), nullptr);
+    app::PosService pos(&shared, u"Tuckshop"_s);
+
+    ringAndPack(pos);
+    CHECK(linesOf(pos) == QStringList{u"Classic Burger/1/1"_s, u"Water/1/1"_s, u"House Salad/2/2"_s,
+                                     u"Cheeseburger/3/1"_s, u"Soda/4/2"_s});
+
+    // Whose and when are the check's: saved with it.
     const core::Check &open = shared.open.begin()->second;
     const std::optional<core::Check> back = app::checkFromJson(app::toJson(open));
     REQUIRE(back);
-    CHECK(back->seatNames == std::map<int, std::string>{{1, "Sam 3B"}, {2, "Mia 1A"}});
-    CHECK(back->seatName(1) == "Sam 3B");
+    CHECK(back->seatNames == std::map<int, std::string>{{1, "Sam 3B"}, {2, "Sam 3B"}, {3, "Mia 1A"}, {4, "Mia 1A"}});
+    CHECK(back->seatCourses == std::map<int, int>{{1, 1}, {2, 2}, {3, 1}, {4, 2}});
     CHECK(back->seatName(7).empty());
+    CHECK(back->seatCourse(7) == 1);
 
-    // Paid once, for every bag.
     pos.openDrawerSession();
     REQUIRE(pos.tender(u"cash"_s));
     REQUIRE(pos.closeCheck());
-    CHECK(shared.closedToday.back().seatNames.size() == 2);
-    CHECK(shared.closedToday.back().lines.size() == 4);
+    CHECK(shared.closedToday.back().seatNames.size() == 4);
+    CHECK(shared.closedToday.back().lines.size() == 5);
+
+    // Bags are a tuckshop's.
+    app::PosData truck = test::seedPosData();
+    truck.settings.serviceMode = "foodTruck";
+    truck.settings.truckNoLogin = true;
+    app::PosShared truckShared(truck, nullptr);
+    app::PosService other(&truckShared, u"Truck"_s);
+    REQUIRE(other.addItem(u"soda"_s));
+    CHECK_FALSE(other.setBag(1, u"Sam"_s, 1));
 }
 
 TEST_CASE("Tuckshop: a slip a bag, everything in the bag on it", "[tuckshop][print]")
@@ -162,16 +232,12 @@ TEST_CASE("Tuckshop: a slip a bag, everything in the bag on it", "[tuckshop][pri
     shared.printer = &printer;
     app::PosService pos(&shared, u"Tuckshop"_s);
 
-    REQUIRE(pos.nameSeat(1, u"Sam 3B"_s));
-    REQUIRE(pos.addItem(u"classic-burger"_s));
-    REQUIRE(pos.addItem(u"water"_s));          // the kitchen doesn't make it: in the bag all the same
-    REQUIRE(pos.setCourse(2));
-    REQUIRE(pos.addItem(u"house-salad"_s));
-    REQUIRE(pos.nameSeat(2, u"Mia 1A"_s));
-    REQUIRE(pos.setCourse(1));
-    REQUIRE(pos.addItem(u"cheeseburger"_s));
-    REQUIRE(pos.setCourse(2));
-    REQUIRE(pos.addItem(u"soda"_s));
+    ringAndPack(pos);
+    // One more bag nobody named, and something in no bag at all.
+    REQUIRE(pos.setSeat(5));
+    REQUIRE(pos.addItem(u"iced-tea"_s));
+    REQUIRE(pos.setSeat(0));
+    REQUIRE(pos.addItem(u"coffee"_s));
     pos.openDrawerSession();
     REQUIRE(pos.tender(u"cash"_s));
     REQUIRE(pos.closeCheck());   // paying sends it: every bag at once
@@ -179,26 +245,36 @@ TEST_CASE("Tuckshop: a slip a bag, everything in the bag on it", "[tuckshop][pri
 
     const QString kitchen = readFile(dir.filePath(u"kitchen.txt"_s));
     INFO(kitchen.toStdString());
-    if (const QByteArray shots = qgetenv("VTM_SHOTS"); !shots.isEmpty())   // the slips, to look at
+    if (const QByteArray shots = qgetenv("VTM_SHOTS"); !shots.isEmpty()) {   // the slips, to look at
+        QFile::remove(QString::fromLocal8Bit(shots) + u"/tuckshop-bag-slips.txt"_s);
         QFile::copy(dir.filePath(u"kitchen.txt"_s), QString::fromLocal8Bit(shots) + u"/tuckshop-bag-slips.txt"_s);
-    // Four bags: Little Lunch's first, a child after the other.
+    }
+    // What's in no bag first; then Little Lunch's bags, then Big Lunch's.
+    const qsizetype noBag = kitchen.indexOf(u"1 Coffee"_s);
     const qsizetype samLittle = kitchen.indexOf(u"SAM 3B\n"_s);
     const qsizetype miaLittle = kitchen.indexOf(u"MIA 1A\n"_s);
+    const qsizetype unnamed = kitchen.indexOf(u"BAG 5\n"_s);
     const qsizetype samBig = kitchen.indexOf(u"SAM 3B\n"_s, samLittle + 1);
     const qsizetype miaBig = kitchen.indexOf(u"MIA 1A\n"_s, miaLittle + 1);
-    REQUIRE(samLittle >= 0);
+    REQUIRE(noBag >= 0);
+    REQUIRE(samLittle > noBag);
     REQUIRE(miaLittle > samLittle);
-    REQUIRE(samBig > miaLittle);
+    REQUIRE(unnamed > miaLittle);     // (the first break, until someone says)
+    REQUIRE(samBig > unnamed);
     REQUIRE(miaBig > samBig);
-    CHECK(kitchen.count(u"LITTLE LUNCH"_s) == 2);
+    CHECK(kitchen.count(u"LITTLE LUNCH"_s) == 3);
     CHECK(kitchen.count(u"BIG LUNCH"_s) == 2);
+    CHECK(kitchen.count(u"KITCHEN"_s) == 6);   // six slips
+    // What's in no bag says no child and no break.
+    const QString first = kitchen.left(samLittle);
+    CHECK_FALSE(first.contains(u"LUNCH"_s));
     // Each slip has its own bag's items, and only those.
-    const QString first = kitchen.mid(samLittle, miaLittle - samLittle);
-    CHECK(first.contains(u"LITTLE LUNCH"_s));
-    CHECK(first.contains(u"1 Classic Burger"_s));
-    CHECK(first.contains(u"1 Water"_s));
-    CHECK_FALSE(first.contains(u"House Salad"_s));
-    CHECK_FALSE(first.contains(u"Cheeseburger"_s));
+    const QString sams = kitchen.mid(samLittle, miaLittle - samLittle);
+    CHECK(sams.contains(u"LITTLE LUNCH"_s));
+    CHECK(sams.contains(u"1 Classic Burger"_s));
+    CHECK(sams.contains(u"1 Water"_s));          // the kitchen doesn't make it: in the bag all the same
+    CHECK_FALSE(sams.contains(u"House Salad"_s));
+    CHECK_FALSE(sams.contains(u"Cheeseburger"_s));
     const QString last = kitchen.mid(miaBig);
     CHECK(last.contains(u"BIG LUNCH"_s));
     CHECK(last.contains(u"1 Soda"_s));
@@ -207,7 +283,7 @@ TEST_CASE("Tuckshop: a slip a bag, everything in the bag on it", "[tuckshop][pri
     CHECK_FALSE(kitchen.contains(u"S1 "_s));
     CHECK_FALSE(kitchen.contains(u"COURSE"_s));
     // Every one says the order it's part of.
-    CHECK(kitchen.count(u"#1"_s) >= 4);
+    CHECK(kitchen.count(u"#1"_s) >= 6);
 }
 
 TEST_CASE("Tuckshop: a sale over the counter is a ticket as ever", "[tuckshop][print]")
@@ -293,7 +369,7 @@ TEST_CASE("Tuckshop: the breaks are the store's to name", "[tuckshop]")
     CHECK(shared.settings.servesTuckshop());
 }
 
-TEST_CASE("Tuckshop screen: the children on the chips, the breaks by name", "[tuckshop][ui]")
+TEST_CASE("Tuckshop screen: rung in, packed into bags, each bag a child's for a break", "[tuckshop][ui]")
 {
     auto l = test::loadTestLayout();
     REQUIRE(l);
@@ -326,54 +402,75 @@ TEST_CASE("Tuckshop screen: the children on the chips, the breaks by name", "[tu
             window->grabWindow().save(QString::fromLocal8Bit(dir) + u'/' + QString::fromLatin1(name) + u".png"_s);
     };
 
-    // The truck's order screen, and before there's an order: + Child.
+    // The truck's order screen. Rung in first: it's all in no bag.
     CHECK(c.pageId() == u"index-lunch"_s);
-    CHECK_FALSE(pos.hasCheck());
-    CHECK(text(u"seatAdd"_s) == u"+ Child"_s);
-    CHECK(text(u"seat0"_s) == u"No bag"_s);
-    shot("tuckshop-0-start");
+    CHECK_FALSE(named(root, u"seatAdd"_s));            // nothing to pack yet
+    REQUIRE(pos.addItem(u"classic-burger"_s));
+    REQUIRE(pos.addItem(u"water"_s));
+    REQUIRE(pos.addItem(u"house-salad"_s));
+    QTest::qWait(60);
+    CHECK(text(u"seat0"_s) == u"No bag ·3"_s);
+    CHECK(text(u"seatAdd"_s) == u"+ Bag"_s);
+    CHECK_FALSE(named(root, u"course1"_s));            // a break is a bag's: none in hand
+    shot("tuckshop-0-rung-in");
+    const auto id = [&](int line) { return pos.lines().at(line).toMap()[u"id"_s].toLongLong(); };
 
-    // + Child asks whose bag it is; saved, the order starts and it's theirs.
+    // A touched line, then + Bag: a new bag with it in it.
+    pos.selectLine(id(0));
     tap(u"seatAdd"_s);
+    CHECK(linesOf(pos).at(0) == u"Classic Burger/1/1"_s);
+    CHECK(text(u"seat1"_s) == u"Bag 1 LL ·1"_s);
+    CHECK(text(u"seat0"_s) == u"No bag ·2"_s);
+    // Another line, then that bag: in it too.
+    pos.selectLine(id(1));
+    tap(u"seat1"_s);
+    CHECK(linesOf(pos).at(1) == u"Water/1/1"_s);
+    CHECK(text(u"seat1"_s) == u"Bag 1 LL ·2"_s);
+    CHECK_FALSE(named(root, u"whoField"_s));
+    // The salad: a second bag.
+    pos.selectLine(id(2));
+    tap(u"seatAdd"_s);
+    CHECK(linesOf(pos).at(2) == u"House Salad/2/1"_s);
+    CHECK(text(u"seat0"_s) == u"No bag"_s);            // all packed
+    shot("tuckshop-1-packed");
+
+    // The bag in hand touched again: whose is it, and for which break?
+    tap(u"seat2"_s);
     QQuickItem *field = named(root, u"whoField"_s);
     REQUIRE(field);
-    shot("tuckshop-1-whose-bag");
+    CHECK(text(u"bagBreak1"_s) == u"Little Lunch"_s);
+    CHECK(text(u"bagBreak2"_s) == u"Big Lunch"_s);
     field->setProperty("text", u"Sam 3B"_s);
+    tap(u"bagBreak2"_s);
+    shot("tuckshop-2-whose-bag");
     tap(u"whoSave"_s);
-    REQUIRE(pos.hasCheck());
-    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Sam 3B"_s}});
-    CHECK(pos.checkInfo()[u"seat"_s].toInt() == 1);
-    CHECK(text(u"seat1"_s) == u"Sam 3B"_s);
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"2"_s, u"Sam 3B"_s}});
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap() == QVariantMap{{u"2"_s, 2}});
+    CHECK(linesOf(pos).at(2) == u"House Salad/2/2"_s);
+    CHECK(text(u"seat2"_s) == u"Sam 3B BL ·1"_s);
 
-    // The breaks, by name: Little Lunch to start with.
+    // The first bag: touched (in hand), touched again (whose).
+    tap(u"seat1"_s);
+    CHECK(pos.checkInfo()[u"seat"_s].toInt() == 1);
+    CHECK_FALSE(named(root, u"whoField"_s));
+    tap(u"seat1"_s);
+    REQUIRE(named(root, u"whoField"_s));
+    named(root, u"whoField"_s)->setProperty("text", u"Sam 3B"_s);
+    tap(u"whoSave"_s);
+    CHECK(text(u"seat1"_s) == u"Sam 3B LL ·2"_s);
+
+    // The break keys under the bags: the bag in hand's, at a touch.
     CHECK(text(u"course1"_s) == u"Little Lunch"_s);
     CHECK(text(u"course2"_s) == u"Big Lunch"_s);
     CHECK_FALSE(named(root, u"course3"_s));
-    REQUIRE(pos.addItem(u"classic-burger"_s));
     tap(u"course2"_s);
-    CHECK(pos.checkInfo()[u"course"_s].toInt() == 2);
-    REQUIRE(pos.addItem(u"house-salad"_s));
-    QTest::qWait(60);
-    CHECK(text(u"seat1"_s) == u"Sam 3B ·2"_s);   // (how many are theirs)
-
-    // The next child.
-    tap(u"seatAdd"_s);
-    REQUIRE(named(root, u"whoField"_s));
-    named(root, u"whoField"_s)->setProperty("text", u"Mia 1A"_s);
-    tap(u"whoSave"_s);
-    CHECK(pos.checkInfo()[u"seat"_s].toInt() == 2);
-    REQUIRE(pos.addItem(u"soda"_s));
+    CHECK(linesOf(pos) == QStringList{u"Classic Burger/1/2"_s, u"Water/1/2"_s, u"House Salad/2/2"_s});
     tap(u"course1"_s);
-    REQUIRE(pos.addItem(u"cheeseburger"_s));
-    QTest::qWait(60);
-    CHECK(text(u"seat2"_s) == u"Mia 1A ·2"_s);
-    CHECK(linesOf(pos) == QStringList{u"Classic Burger/1/1"_s, u"House Salad/1/2"_s, u"Soda/2/2"_s, u"Cheeseburger/2/1"_s});
-    shot("tuckshop-2-two-children");
+    CHECK(linesOf(pos) == QStringList{u"Classic Burger/1/1"_s, u"Water/1/1"_s, u"House Salad/2/2"_s});
+    shot("tuckshop-3-two-bags");
 
-    // A child's chip: what's rung in next is theirs again.
-    tap(u"seat1"_s);
-    CHECK(pos.checkInfo()[u"seat"_s].toInt() == 1);
-    // Nobody's bag: over the counter.
+    // No bag: over the counter; no break keys.
     tap(u"seat0"_s);
     CHECK(pos.checkInfo()[u"seat"_s].toInt() == 0);
+    CHECK_FALSE(named(root, u"course1"_s));
 }

@@ -752,12 +752,16 @@ public:
     // --- seats and courses --------------------------------------------------------
     // The seat / course new items go to; also changes the selected line.
     bool setSeat(int seat);
-    // Who seat `seat` is ("Sam 3B"; empty: nobody in particular again), and
-    // it's the seat for what's rung in next. A tuckshop's children.
+    // Who seat `seat` is ("Grandma"; empty: nobody in particular again).
     bool nameSeat(int seat, const QString &name);
+    // A tuckshop's bag `seat`: whose it is ("Sam 3B") and the break it's
+    // for (1: the first), what's in it with it.
+    bool setBag(int seat, const QString &name, int course);
     bool setCourse(int course);
     // A tuckshop's check holds no course back (its courses are breaks).
     void noHeldBreaks(core::Check &c) const;
+    // A tuckshop's bag is for a break: what's in it is too.
+    void putInBreak(core::Check &c, int seat, int course);
     // Send the next course that is on hold.
     bool fireCourse();
     // Course pacing: fire the next held course in `minutes` (0: now; -1: never mind).
@@ -1197,9 +1201,9 @@ public:
     // How this screen serves: "restaurant", "foodTruck", "retail" or
     // "tuckshop" (the terminal's setting, else the store's).
     QString serviceMode() const;
-    // A tuckshop's screen: a food truck's counter, and an order's items are
-    // children's (seats with names), each for one of the day's breaks (its
-    // course): a bag a child a break (PosSettings::tuckshopBreaks).
+    // A tuckshop's screen: a food truck's counter, and an order is packed
+    // into bags (its seats): each a child's (the seat's name), for one of
+    // the day's breaks (PosSettings::tuckshopBreaks; its lines' course).
     bool tuckshop() const { return serviceMode() == u"tuckshop" && !selfOrder_; }
     // A food truck screen: nobody logs in. It runs as the counter (the
     // built-in Counter, or whoever said they're working: Store Settings ->

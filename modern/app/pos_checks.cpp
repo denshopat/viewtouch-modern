@@ -257,8 +257,21 @@ bool PosService::setSeat(int seat)
     seat_ = std::clamp(seat, 0, 99);
     // A line someone touched moves to that seat; otherwise this is the seat
     // for the next items.
-    if (OrderLine *l = c->line(selectedLine_); l && lineTouched_ && !l->voided)
+    OrderLine *l = c->line(selectedLine_);
+    const bool moved = l && lineTouched_ && !l->voided;
+    if (moved)
         l->seat = seat_;
+    if (tuckshop()) {
+        // A tuckshop's seat is a bag, for a break: what goes in it is for
+        // that break. Put in, the line is let go (the bag touched again is
+        // the bag's own: whose it is).
+        course_ = seat_ > 0 ? c->seatCourse(seat_) : 1;
+        if (moved) {
+            l->course = course_;
+            lineTouched_ = false;
+        }
+        noHeldBreaks(*c);
+    }
     changed(*c);
     return true;
 }
@@ -268,10 +281,16 @@ bool PosService::setCourse(int course)
     Check *c = current();
     if (!c)
         return fail(tr("No check is open."));
+    if (tuckshop()) {   // the break of the bag in hand, not of one line
+        if (seat_ < 1)
+            return fail(tr("Touch a bag first: the break is the bag's."));
+        putInBreak(*c, seat_, course);
+        changed(*c);
+        return true;
+    }
     course_ = std::clamp(course, 1, 9);
     if (OrderLine *l = c->line(selectedLine_); l && lineTouched_ && !l->sent)
         l->course = course_;
-    noHeldBreaks(*c);
     changed(*c);
     return true;
 }
@@ -287,23 +306,45 @@ void PosService::noHeldBreaks(Check &c) const
             c.firedCourse = std::max(c.firedCourse, l.course);
 }
 
+void PosService::putInBreak(Check &c, int seat, int course)
+{
+    const int breaks = std::max(1, int(s_->settings.tuckshopBreaks.size()));
+    const int to = std::clamp(course, 1, breaks);
+    c.seatCourses[seat] = to;
+    for (OrderLine &l : c.lines)
+        if (l.seat == seat && !l.voided)
+            l.course = to;
+    if (seat == seat_)
+        course_ = to;   // what's rung in next, into this bag
+    noHeldBreaks(c);
+}
+
 bool PosService::nameSeat(int seat, const QString &name)
 {
     if (!require(perm::Order, tr("Taking orders")))
         return false;
+    Check *c = current();
+    if (!c)
+        return fail(tr("No check is open."));
     if (seat < 1 || seat > 99)
         return fail(tr("Choose who it is for first."));
-    // The first child starts the order (a tuckshop's: the bag before what's in it).
-    if (!current() && !startCheck(CheckType::Quick))
-        return false;
-    Check *c = current();
     const QString who = name.simplified().left(40);
     if (who.isEmpty())
         c->seatNames.erase(seat);
     else
         c->seatNames[seat] = ss(who);
-    if (seat != seat_)
-        return setSeat(seat);   // theirs from here on (a touched line too)
+    changed(*c);
+    return true;
+}
+
+bool PosService::setBag(int seat, const QString &name, int course)
+{
+    if (!tuckshop())
+        return fail(tr("Bags are a tuckshop's."));
+    if (!nameSeat(seat, name))
+        return false;
+    Check *c = current();
+    putInBreak(*c, seat, course);
     changed(*c);
     return true;
 }
