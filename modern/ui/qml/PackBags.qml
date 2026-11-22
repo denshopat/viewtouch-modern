@@ -263,6 +263,17 @@ Popup {
                                 takesTouch: true
                                 onClicked: p.putIn(box.seat)
                             }
+                            // Its name in a new, empty bag for the other break.
+                            WidgetKey {
+                                objectName: "bag" + box.seat + "Copy"
+                                visible: box.seat > 0 && p.bagName(box.seat) !== ""
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: p.tapH * 0.8
+                                text: qsTr("Copy this Bag")
+                                fontScale: 0.34
+                                takesTouch: true
+                                onClicked: p.pos.copyBag(box.seat)
+                            }
                             // An empty bag can go.
                             WidgetKey {
                                 objectName: "bag" + box.seat + "Remove"

@@ -185,6 +185,18 @@ TEST_CASE("Tuckshop: the order rung in, then packed into bags", "[tuckshop]")
     CHECK(pos.checkInfo()[u"heldCount"_s].toInt() == 0);
     for (const QVariant &v : pos.lines())
         CHECK_FALSE(v.toMap()[u"held"_s].toBool());
+
+    // Copy this Bag: its name in a new, empty bag, for the other break.
+    REQUIRE(pos.setBag(1, u"Sam 3B"_s, 1));
+    const QStringList before = linesOf(pos);
+    CHECK(pos.copyBag(1) == 3);
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap()[u"3"_s].toString() == u"Sam 3B"_s);
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap()[u"3"_s].toInt() == 2);
+    CHECK(linesOf(pos) == before);   // nothing in it, nothing added to the order
+    CHECK(pos.copyBag(3) == 4);      // Big Lunch's copy: Little Lunch
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap()[u"4"_s].toInt() == 1);
+    CHECK(pos.copyBag(2) == -1);     // no name: nothing to copy
+    CHECK(pos.copyBag(0) == -1);
 }
 
 TEST_CASE("Tuckshop: two children, a bag each a break, paid once", "[tuckshop]")
@@ -496,6 +508,17 @@ TEST_CASE("Tuckshop screen: the Bags screen, as a finger uses it", "[tuckshop][u
     // The names held through it all.
     CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Sam3B"_s}, {u"2"_s, u"Mia"_s}});
     shot("bags-2-packed");
+
+    // Copy this Bag on Mia's (Little Lunch): Mia's Big Lunch bag, empty.
+    CHECK(text(u"bag2Copy"_s) == u"Copy this Bag"_s);
+    tap(u"bag2Copy"_s);
+    REQUIRE(find(u"bag3"_s));
+    CHECK(text(u"bagName3"_s) == u"Mia"_s);
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap()[u"3"_s].toInt() == 2);
+    REQUIRE(find(u"bag3Remove"_s));   // empty: it can go
+    shot("bags-2b-copied");
+    tap(u"bag3Remove"_s);
+    CHECK_FALSE(find(u"bag3"_s));
 
     // Three sodas: two to Sam, one to Mia (how many?).
     tap(u"bagsDone"_s);

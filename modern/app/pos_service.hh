@@ -763,6 +763,9 @@ public:
     int moveToBag(const QVariantList &lineIds, int bag, int count = 0);
     // An empty bag gone (its name and break with it).
     bool removeBag(int seat);
+    // A new, empty bag with bag `seat`'s name, for the next break (Little
+    // Lunch's: Big Lunch). Returns the new bag (-1: none).
+    int copyBag(int seat);
     bool setCourse(int course);
     // A tuckshop's check holds no course back (its courses are breaks).
     void noHeldBreaks(core::Check &c) const;

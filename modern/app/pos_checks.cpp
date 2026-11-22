@@ -340,6 +340,43 @@ bool PosService::removeBag(int seat)
     return true;
 }
 
+int PosService::copyBag(int seat)
+{
+    if (!require(perm::Order, tr("Taking orders")))
+        return -1;
+    if (!tuckshop()) {
+        fail(tr("Bags are a tuckshop's."));
+        return -1;
+    }
+    Check *c = current();
+    if (!c) {
+        fail(tr("No check is open."));
+        return -1;
+    }
+    const std::string name = c->seatName(seat);
+    if (seat < 1 || name.empty()) {
+        fail(tr("Name the bag first."));
+        return -1;
+    }
+    int last = 0;
+    for (const OrderLine &l : c->lines)
+        last = std::max(last, l.seat);
+    for (const auto &[s, n] : c->seatNames)
+        last = std::max(last, s);
+    for (const auto &[s, course] : c->seatCourses)
+        last = std::max(last, s);
+    if (last >= 99) {
+        fail(tr("No more bags on this order."));
+        return -1;
+    }
+    const int bag = last + 1;
+    const int breaks = std::max(1, int(s_->settings.tuckshopBreaks.size()));
+    c->seatNames[bag] = name;
+    c->seatCourses[bag] = c->seatCourse(seat) % breaks + 1;   // the next break (after the last: the first)
+    changed(*c);
+    return bag;
+}
+
 int PosService::moveToBag(const QVariantList &lineIds, int bag, int count)
 {
     if (!require(perm::Order, tr("Taking orders")))
