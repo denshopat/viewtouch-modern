@@ -257,21 +257,8 @@ bool PosService::setSeat(int seat)
     seat_ = std::clamp(seat, 0, 99);
     // A line someone touched moves to that seat; otherwise this is the seat
     // for the next items.
-    OrderLine *l = c->line(selectedLine_);
-    const bool moved = l && lineTouched_ && !l->voided;
-    if (moved)
+    if (OrderLine *l = c->line(selectedLine_); l && lineTouched_ && !l->voided)
         l->seat = seat_;
-    if (tuckshop()) {
-        // A tuckshop's seat is a bag, for a break: what goes in it is for
-        // that break. Put in, the line is let go (the bag touched again is
-        // the bag's own: whose it is).
-        course_ = seat_ > 0 ? c->seatCourse(seat_) : 1;
-        if (moved) {
-            l->course = course_;
-            lineTouched_ = false;
-        }
-        noHeldBreaks(*c);
-    }
     changed(*c);
     return true;
 }
@@ -281,13 +268,6 @@ bool PosService::setCourse(int course)
     Check *c = current();
     if (!c)
         return fail(tr("No check is open."));
-    if (tuckshop()) {   // the break of the bag in hand, not of one line
-        if (seat_ < 1)
-            return fail(tr("Touch a bag first: the break is the bag's."));
-        putInBreak(*c, seat_, course);
-        changed(*c);
-        return true;
-    }
     course_ = std::clamp(course, 1, 9);
     if (OrderLine *l = c->line(selectedLine_); l && lineTouched_ && !l->sent)
         l->course = course_;
@@ -314,8 +294,6 @@ void PosService::putInBreak(Check &c, int seat, int course)
     for (OrderLine &l : c.lines)
         if (l.seat == seat && !l.voided)
             l.course = to;
-    if (seat == seat_)
-        course_ = to;   // what's rung in next, into this bag
     noHeldBreaks(c);
 }
 
@@ -347,6 +325,77 @@ bool PosService::setBag(int seat, const QString &name, int course)
     putInBreak(*c, seat, course);
     changed(*c);
     return true;
+}
+
+bool PosService::removeBag(int seat)
+{
+    Check *c = current();
+    if (!c)
+        return fail(tr("No check is open."));
+    if (std::ranges::any_of(c->lines, [seat](const OrderLine &l) { return l.seat == seat && !l.voided; }))
+        return fail(tr("Take everything out of the bag first."));
+    c->seatNames.erase(seat);
+    c->seatCourses.erase(seat);
+    changed(*c);
+    return true;
+}
+
+int PosService::moveToBag(const QVariantList &lineIds, int bag, int count)
+{
+    if (!require(perm::Order, tr("Taking orders")))
+        return -1;
+    if (!tuckshop()) {
+        fail(tr("Bags are a tuckshop's."));
+        return -1;
+    }
+    Check *c = current();
+    if (!c) {
+        fail(tr("No check is open."));
+        return -1;
+    }
+    if (lineIds.isEmpty()) {
+        fail(tr("Touch the items to move first."));
+        return -1;
+    }
+    // A new bag: the next number after every bag there is (named, or with
+    // something in it). The first break until someone says.
+    if (bag < 0) {
+        int last = 0;
+        for (const OrderLine &l : c->lines)
+            last = std::max(last, l.seat);
+        for (const auto &[seat, name] : c->seatNames)
+            last = std::max(last, seat);
+        for (const auto &[seat, course] : c->seatCourses)
+            last = std::max(last, seat);
+        if (last >= 99) {
+            fail(tr("No more bags on this order."));
+            return -1;
+        }
+        bag = last + 1;
+        c->seatCourses[bag] = 1;
+    }
+    bag = std::clamp(bag, 0, 99);
+    const int course = bag > 0 ? std::clamp(c->seatCourse(bag), 1, std::max(1, int(s_->settings.tuckshopBreaks.size()))) : 1;
+    for (const QVariant &v : lineIds) {
+        OrderLine *l = c->line(v.toLongLong());
+        if (!l || l->voided || l->isFee() || l->isGiftCard())
+            continue;
+        // Some of a line of several: those go, the rest stay where they were.
+        if (lineIds.size() == 1 && count > 0 && count < l->quantity && !l->isShare() && l->weight == 0 && !l->isReturn()) {
+            OrderLine part = *l;
+            part.quantity = count;
+            l->quantity -= count;
+            OrderLine &moved = c->adoptLine(std::move(part));
+            moved.seat = bag;
+            moved.course = course;
+            continue;
+        }
+        l->seat = bag;
+        l->course = course;
+    }
+    noHeldBreaks(*c);
+    changed(*c);
+    return bag;
 }
 
 bool PosService::checkedOn()

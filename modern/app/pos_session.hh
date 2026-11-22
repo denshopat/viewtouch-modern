@@ -525,6 +525,8 @@ public:
     Q_INVOKABLE void setSeat(int seat) { invoke(QStringLiteral("setSeat"), {seat}); }
     Q_INVOKABLE void nameSeat(int seat, const QString &name) { invoke(QStringLiteral("nameSeat"), {seat, name}); }
     Q_INVOKABLE void setBag(int seat, const QString &name, int course) { invoke(QStringLiteral("setBag"), {seat, name, course}); }
+    Q_INVOKABLE void removeBag(int seat) { invoke(QStringLiteral("removeBag"), {seat}); }
+    Q_INVOKABLE void moveToBag(const QVariantList &lineIds, int bag, int count = 0) { invoke(QStringLiteral("moveToBag"), {lineIds, bag, count}); }
     Q_INVOKABLE void setNextQuantity(int quantity) { invoke(QStringLiteral("setNextQuantity"), {quantity}); }
     Q_INVOKABLE void checkedOn() { invoke(QStringLiteral("checkedOn"), {}); }
     Q_INVOKABLE void fastCash(qint64 cents) { invoke(QStringLiteral("fastCash"), {cents}); }

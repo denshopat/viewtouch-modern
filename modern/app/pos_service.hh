@@ -757,6 +757,12 @@ public:
     // A tuckshop's bag `seat`: whose it is ("Sam 3B") and the break it's
     // for (1: the first), what's in it with it.
     bool setBag(int seat, const QString &name, int course);
+    // Lines into bag `bag` (0: in no bag; -1: a new bag): `count` of a
+    // single line of several moves that many (0: all). Returns the bag (-1:
+    // nothing moved).
+    int moveToBag(const QVariantList &lineIds, int bag, int count = 0);
+    // An empty bag gone (its name and break with it).
+    bool removeBag(int seat);
     bool setCourse(int course);
     // A tuckshop's check holds no course back (its courses are breaks).
     void noHeldBreaks(core::Check &c) const;

@@ -23,19 +23,14 @@ Item {
     readonly property real tapH: zone ? zone.touch(48) : 0
     readonly property bool phone: !!zone && !!zone.controller && zone.controller.formFactor === "phone"
     readonly property var check: pos ? pos.check : ({})
-    // A tuckshop: the order is rung in, then packed into bags (the seats):
-    // an item goes in a bag, and a bag is a child's (its name on the chip)
-    // for one of the day's breaks.
+    // A tuckshop: the order is packed into bags on the Bags screen (each a
+    // child's, for a break); a line says the bag it's in.
     readonly property bool tuckshop: !!(pos && pos.service && pos.service.tuckshop)
     readonly property var breaks: tuckshop ? (pos.service.breaks ?? []) : []
-    readonly property var seatNames: check.seatNames ?? ({})
-    readonly property var seatBreaks: check.seatBreaks ?? ({})
-    function seatText(seat) { return seatNames[String(seat)] ?? (tuckshop ? qsTr("Bag %1").arg(seat) : "S" + seat) }
-    function bagBreak(seat) { return seatBreaks[String(seat)] ?? 1 }
-    // "Little Lunch" -> "LL": on a bag's chip and beside its lines.
-    function breakShort(course) {
-        const name = breaks[course - 1] ?? ""
-        return name ? name.split(/\s+/).map(word => word.charAt(0).toUpperCase()).join("") : "C" + course
+    function bagLabel(seat, course) {
+        const name = (check.seatNames ?? {})[String(seat)] ?? qsTr("Bag %1").arg(seat)
+        const b = breaks[course - 1] ?? ""
+        return b ? name + " · " + b : name
     }
     // A swiped line: from here, since selecting it rebuilds the lines (and the row).
     // Whether scene point `at` is on a visible key (a WidgetKey) inside `item`.
@@ -313,7 +308,8 @@ Item {
             Layout.preferredHeight: Math.max(w.unit * 1.9 * Math.min(sheet.big, 1.5), w.tapH)
             spacing: w.unit * 0.25
             // Name, phone, (address,) and when it's wanted.
-            readonly property int keys: truck ? 2 : delivery ? 4 : 3
+            // (A tuckshop's: Bags too, to pack the order.)
+            readonly property int keys: truck ? (w.tuckshop ? 3 : 2) : delivery ? 4 : 3
             readonly property real keyW: (width - spacing * (keys - 1)) / keys
             Repeater {
                 model: who.truck ? ["name", "pager"] : who.delivery ? ["name", "phone", "address"] : ["name", "phone"]
@@ -332,6 +328,17 @@ Item {
                     baseColor: needed ? "#a86a12" : (keySt.keyFill ?? Ui.key)
                     onClicked: sheet.ask(modelData)
                 }
+            }
+            WidgetKey {
+                objectName: "who-bags"
+                visible: w.tuckshop
+                width: who.keyW; height: who.height
+                fontScale: 0.42
+                // How many aren't in a bag yet.
+                readonly property int loose: (w.pos ? w.pos.lines : []).filter(l => !l.comment && !l.voided && !l.fee && !(l.seat > 0))
+                                                                      .reduce((n, l) => n + l.quantity, 0)
+                text: loose > 0 ? qsTr("Bags (%1 to pack)").arg(loose) : qsTr("Bags")
+                onClicked: bags.open()
             }
             WidgetKey {
                 objectName: "who-later"
@@ -442,17 +449,13 @@ Item {
             readonly property int highest: {
                 let m = 0
                 for (const k in counts) m = Math.max(m, Number(k))
-                for (const k in w.seatNames) m = Math.max(m, Number(k))   // a bag someone named, nothing in it yet
-                for (const k in w.seatBreaks) m = Math.max(m, Number(k))
                 return m
             }
             readonly property int guests: w.check.guests ?? 0
-            // (A tuckshop's order has no guests to seat: its bags are those made.)
-            readonly property int seatCount: w.tuckshop ? Math.max(highest, current) : Math.max(guests, highest, current)   // (not "count": a list's own)
-            // (A tuckshop's: always there on an order, to pack it into bags.)
-            visible: w.controls && w.pos !== null && w.pos.hasCheck
-                     && (w.tuckshop || (w.zone.keyShown("seat") && (guests > 0 || current > 0 || highest > 0)))
-                     && (!w.folded || w.check.type === "dineIn" || w.tuckshop)   // folded: a takeout's room is its lines
+            readonly property int seatCount: Math.max(guests, highest, current)   // (not "count": a list's own)
+            visible: w.controls && w.pos !== null && w.pos.hasCheck && w.zone.keyShown("seat")
+                     && (guests > 0 || current > 0 || highest > 0)
+                     && (!w.folded || w.check.type === "dineIn")   // folded: a takeout's room is its lines
             Layout.fillWidth: true
             Layout.preferredHeight: chip
             readonly property real chip: Math.max(w.unit * 1.5, w.zone.touch(48))
@@ -465,35 +468,25 @@ Item {
             model: seatCount + 2   // Shared, 1..seatCount, +
             delegate: WidgetKey {
                 required property int index
-                // (A tuckshop's + Bag comes second, always in reach: No bag, + Bag, the bags.)
-                readonly property bool more: w.tuckshop ? index === 1 : index === seats.seatCount + 1
-                readonly property int seat: more ? seats.seatCount + 1 : w.tuckshop && index > 1 ? index - 1 : index
+                readonly property bool more: index === seats.seatCount + 1
+                readonly property int seat: more ? seats.seatCount + 1 : index
                 readonly property int items: seats.counts[seat] ?? 0
                 readonly property bool allergic: !more && seat > 0 && ((w.check.seatAllergies ?? {})[String(seat)] ?? []).length > 0
                 objectName: more ? "seatAdd" : "seat" + seat
-                // (A tuckshop's: as wide as whose bag it is needs.)
-                width: w.tuckshop ? seats.chip * Math.max(1.9, Math.min(3.4, 0.9 + 0.17 * text.length))
-                                  : index === 0 ? seats.chipWidth * 1.5 : seats.chipWidth
+                width: index === 0 ? seats.chipWidth * 1.5 : seats.chipWidth
                 height: seats.chip
                 accent: !more && seat === seats.current
                 baseColor: more ? "#2a3140" : allergic ? "#7a2226" : Ui.key
-                fontScale: index === 0 || w.tuckshop ? 0.36 : 0.45
-                // (A tuckshop's bag: whose it is and its break, "Sam 3B BL".)
-                text: more ? (w.tuckshop ? qsTr("+ Bag") : "+")
-                           : (allergic ? "⚠" : "") + (index === 0 ? (w.tuckshop ? qsTr("No bag") : w.zone.keyText("seat", qsTr("Shared")))
-                                                                  : w.tuckshop ? w.seatText(seat) + " " + w.breakShort(w.bagBreak(seat)) : seat)
+                fontScale: index === 0 ? 0.36 : 0.45
+                text: more ? "+" : (allergic ? "⚠" : "") + (index === 0 ? w.zone.keyText("seat", qsTr("Shared")) : seat)
                       + (items > 0 && !more ? " ·" + items : "")
-                // A tuckshop's bag: a touched line goes in it; the bag in
-                // hand touched again (no line touched) is asked whose it is.
-                onClicked: w.tuckshop && !more && seat > 0 && seat === seats.current && !w.check.touched ? sheet.askBag(seat)
-                                                                                                          : w.pos.setSeat(seat)
-                // Held: this guest's allergies (a tuckshop's bag: whose it is, and its break).
+                onClicked: w.pos.setSeat(seat)
+                // Held: this guest's allergies.
                 holdable: !more && seat > 0
-                onHeld: w.tuckshop ? sheet.askBag(seat) : w.zone.controller.commandWith("allergies", { seat: seat })
+                onHeld: w.zone.controller.commandWith("allergies", { seat: seat })
             }
             // The touched seat in view (seat 9 of 12).
-            // (A tuckshop's bags come after + Bag.)
-            onCurrentChanged: positionViewAtIndex(w.tuckshop ? (current > 0 ? current + 1 : 0) : Math.min(current, seatCount + 1), ListView.Contain)
+            onCurrentChanged: positionViewAtIndex(Math.min(current, seatCount + 1), ListView.Contain)
         }
 
         // Seat and course for new items (or a touched line); Fire. Sized from
@@ -502,7 +495,7 @@ Item {
             id: bar
             // (Nothing in it on a food truck's or a shop's check: no row at all.)
             visible: w.controls && w.pos && !w.folded
-                     && ((w.pos.hasCheck && (w.zone.keyShown("course") || w.zone.keyShown("fire") || w.tuckshop)) || w.zone.keyShown("quantity")
+                     && ((w.pos.hasCheck && (w.zone.keyShown("course") || w.zone.keyShown("fire"))) || w.zone.keyShown("quantity")
                          || w.zone.keyShown("myLook"))
             Layout.fillWidth: true
             Layout.preferredHeight: Math.max(w.unit * 1.6, w.tapH)
@@ -530,7 +523,7 @@ Item {
                 }
                 Text {
                     textFormat: Text.PlainText
-                    visible: w.zone.keyShown("course") && !!w.pos?.hasCheck && !w.tuckshop
+                    visible: w.zone.keyShown("course") && !!w.pos?.hasCheck
                     anchors.verticalCenter: parent.verticalCenter
                     text: w.zone.keyText("course", qsTr("Course"))
                     color: Ui.muted
@@ -538,15 +531,13 @@ Item {
                     font.pixelSize: bar.key * 0.45
                 }
                 Repeater {
-                    // (A tuckshop's: the day's breaks, by name: the break of the bag in hand.)
-                    model: w.tuckshop ? w.breaks.map((name, i) => i + 1) : [1, 2, 3]
+                    model: [1, 2, 3]
                     delegate: WidgetKey {
                         required property int modelData
                         objectName: "course" + modelData
-                        visible: !!w.pos?.hasCheck && (w.tuckshop ? (w.check.seat ?? 0) > 0 : w.zone.keyShown("course"))
-                        width: w.tuckshop ? Math.max(bar.key * 3.3, w.tapH) : Math.max(bar.key, w.tapH); height: parent.height
-                        fontScale: w.tuckshop ? 0.34 : 0.42
-                        text: w.tuckshop ? w.breaks[modelData - 1] : modelData
+                        visible: w.zone.keyShown("course") && !!w.pos?.hasCheck
+                        width: Math.max(bar.key, w.tapH); height: parent.height
+                        text: modelData
                         accent: (w.check.course ?? 1) === modelData
                         onClicked: w.pos.setCourse(modelData)
                     }
@@ -708,8 +699,8 @@ Item {
                             textFormat: Text.PlainText
                             // S2 / C2: seat and (later) course
                             visible: text !== ""
-                            // (A tuckshop's: the bag it's in, "Sam 3B·BL".)
-                            text: w.tuckshop ? (row.modelData.seat > 0 ? w.seatText(row.modelData.seat) + "·" + w.breakShort(row.modelData.course) : "")
+                            // (A tuckshop's: the bag it's in, "Sam · Big Lunch".)
+                            text: w.tuckshop ? (row.modelData.seat > 0 ? w.bagLabel(row.modelData.seat, row.modelData.course) : "")
                                   : (row.modelData.seat > 0 ? "S" + row.modelData.seat : "")
                                   + (row.modelData.course > 1 ? (row.modelData.seat > 0 ? " " : "") + "C" + row.modelData.course : "")
                                   + (row.modelData.held ? " " + qsTr("HOLD") : "")
@@ -1380,12 +1371,7 @@ Item {
         visible: mode !== "" && w.pos && (w.pos.hasCheck || mode === "quantity")
         color: Qt.rgba(0.06, 0.07, 0.09, 0.94)
         radius: 8
-        // Outside the keys: close. (A finger on a key that doesn't close the
-        // sheet, a bag's break, is offered here too: that isn't outside.)
-        MouseArea {
-            anchors.fill: parent
-            onClicked: mouse => { if (!w.onAKey(sheet, mapToItem(null, mouse.x, mouse.y))) sheet.mode = "" }
-        }
+        MouseArea { anchors.fill: parent; onClicked: sheet.mode = "" }   // outside the keys: close
         // On a phone the check's text is small: its choices are made bigger.
         readonly property real big: w.zone && w.zone.controller && w.zone.controller.formFactor === "phone" ? 1.8 : 1
         readonly property real key: w.unit * 2.2 * big
@@ -1423,18 +1409,7 @@ Item {
             w.pos.splitLine(checkId, all)
         }
         // Who the order is for: "name" | "phone" | "address".
-        readonly property bool asking: mode === "name" || mode === "phone" || mode === "address" || mode === "pager" || mode === "bag"
-        // A tuckshop's bag (a seat): whose it is, and the break it's for.
-        property int bagSeat: 0
-        property int bagCourse: 1
-        function askBag(seat) {
-            bagSeat = seat
-            bagCourse = w.bagBreak(seat)
-            mode = "bag"
-            whoField.text = w.seatNames[String(seat)] ?? ""
-            whoField.selectAll()
-            whoField.forceActiveFocus()
-        }
+        readonly property bool asking: mode === "name" || mode === "phone" || mode === "address" || mode === "pager"
         function ask(field) {
             mode = field
             whoField.text = field === "pager" ? ((w.check.pager ?? 0) > 0 ? String(w.check.pager) : "")
@@ -1443,12 +1418,6 @@ Item {
             whoField.forceActiveFocus()
         }
         function saveWho() {
-            if (mode === "bag") {
-                const seat = bagSeat
-                mode = ""
-                w.pos.setBag(seat, whoField.text, bagCourse)
-                return
-            }
             if (mode === "pager") {   // a food truck's: the guest's pager, by its number
                 mode = ""
                 w.pos.setPager(parseInt(whoField.text, 10) || 0)
@@ -1473,8 +1442,7 @@ Item {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
-                text: sheet.mode === "bag" ? qsTr("Bag %1: whose is it, and for which break?").arg(sheet.bagSeat)
-                    : sheet.mode === "name" ? qsTr("Name for the order")
+                text: sheet.mode === "name" ? qsTr("Name for the order")
                     : sheet.mode === "phone" ? qsTr("Their phone number")
                     : sheet.mode === "address" ? qsTr("Where to deliver it")
                     : sheet.mode === "pager" ? qsTr("The pager's number (0: none)")
@@ -1498,13 +1466,13 @@ Item {
                 font.family: w.face
                 font.pixelSize: w.unit * 0.9 * sheet.big
                 inputMethodHints: sheet.mode === "phone" ? Qt.ImhDialableCharactersOnly : sheet.mode === "pager" ? Qt.ImhDigitsOnly : Qt.ImhNone
-                placeholderText: sheet.mode === "name" ? qsTr("Name") : sheet.mode === "bag" ? qsTr("Their name (and class)") : sheet.mode === "phone" ? qsTr("Phone") : sheet.mode === "pager" ? qsTr("Number on the pager")
+                placeholderText: sheet.mode === "name" ? qsTr("Name") : sheet.mode === "phone" ? qsTr("Phone") : sheet.mode === "pager" ? qsTr("Number on the pager")
                                                                        : qsTr("Street, apartment, city")
-                onTextEdited: if (sheet.mode !== "address" && sheet.mode !== "pager" && sheet.mode !== "bag" && text.trim().length >= 3) w.pos.findCustomers(text.trim())
+                onTextEdited: if (sheet.mode !== "address" && sheet.mode !== "pager" && text.trim().length >= 3) w.pos.findCustomers(text.trim())
                 onAccepted: sheet.saveWho()
             }
             Repeater {
-                model: sheet.asking && sheet.mode !== "address" && sheet.mode !== "pager" && sheet.mode !== "bag" && whoField.text.trim().length >= 3
+                model: sheet.asking && sheet.mode !== "address" && sheet.mode !== "pager" && whoField.text.trim().length >= 3
                        ? (w.pos.customers ?? []).slice(0, 3) : []
                 delegate: WidgetKey {
                     required property var modelData
@@ -1513,26 +1481,6 @@ Item {
                     fontScale: 0.38
                     text: modelData.name + (modelData.phone ? "  ·  " + modelData.phone : "")
                     onClicked: sheet.useRegular(modelData.id)
-                }
-            }
-            // A bag's break: one of the day's.
-            Row {
-                visible: sheet.mode === "bag" && w.breaks.length > 0
-                width: parent.width
-                spacing: w.unit * 0.25
-                Repeater {
-                    model: sheet.mode === "bag" ? w.breaks.map((name, i) => i + 1) : []
-                    delegate: WidgetKey {
-                        required property int modelData
-                        objectName: "bagBreak" + modelData
-                        width: (parent.width - parent.spacing * (w.breaks.length - 1)) / w.breaks.length
-                        height: sheet.key
-                        fontScale: 0.36
-                        takesTouch: true   // the sheet stays: nothing behind sees the finger
-                        text: w.breaks[modelData - 1]
-                        accent: sheet.bagCourse === modelData
-                        onClicked: sheet.bagCourse = modelData
-                    }
                 }
             }
             WidgetKey {
@@ -1674,5 +1622,12 @@ Item {
             target: w.pos
             function onCheckChanged() { if (!w.pos.hasCheck && sheet.mode !== "quantity") sheet.mode = "" }
         }
+    }
+
+    // A tuckshop's Bags screen: the order packed into bags, over the whole window.
+    PackBags {
+        id: bags
+        pos: w.pos
+        face: w.face
     }
 }

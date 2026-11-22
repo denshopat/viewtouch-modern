@@ -2400,8 +2400,7 @@ QVariantMap PosService::checkInfo() const
                  m.insert(QString::number(seat), course);
              return m;
          }()},
-        // A line was touched: a seat touched next takes it.
-        {u"touched"_s, lineTouched_ && c->line(selectedLine_) != nullptr},
+
         // Seat -> its guest's allergen ids ({"2": ["peanuts"]}).
         {u"seatAllergies"_s, [c] {
              QVariantMap m;

@@ -278,6 +278,7 @@ if(Qt6_FOUND)
             ui/qml/WidgetDrawerPanel.qml
             ui/qml/WidgetEndOfDay.qml
             ui/qml/WidgetSplitCheck.qml
+            ui/qml/PackBags.qml
             ui/qml/WidgetKitchenDisplay.qml
             ui/qml/WidgetCustomerInfo.qml
         SOURCES
