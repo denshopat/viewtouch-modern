@@ -470,7 +470,7 @@ Item {
                 width: w.tuckshop ? seats.chip * Math.max(1.9, Math.min(3.4, 0.9 + 0.17 * text.length))
                                   : index === 0 ? seats.chipWidth * 1.5 : seats.chipWidth
                 height: seats.chip
-                accent: !more && seat === seats.current && (w.pos.hasCheck || !w.tuckshop)
+                accent: !more && seat === seats.current && (!w.tuckshop || !!w.pos?.hasCheck)
                 baseColor: more ? "#2a3140" : allergic ? "#7a2226" : Ui.key
                 fontScale: index === 0 || w.tuckshop ? 0.36 : 0.45
                 text: more ? (w.tuckshop ? qsTr("+ Child") : "+")
