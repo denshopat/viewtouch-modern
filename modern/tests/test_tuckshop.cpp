@@ -10,6 +10,10 @@
 #include "qt_catch.hh"
 
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QPointingDevice>
+#include <functional>
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
@@ -387,10 +391,16 @@ TEST_CASE("Tuckshop screen: rung in, packed into bags, each bag a child's for a 
     REQUIRE(QTest::qWaitForWindowExposed(window));
     QTest::qWait(50);
     QQuickItem *root = window->contentItem();
+    // A finger's tap (the till is a touch screen), not a mouse's click: a
+    // touch is offered to what's behind a key too.
+    QPointingDevice *finger = QTest::createTouchDevice();
     const auto tap = [&](const QString &name) {
         QQuickItem *item = named(root, name);
         REQUIRE(item);
-        QTest::mouseClick(window, Qt::LeftButton, {}, item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint());
+        const QPoint at = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+        QTest::touchEvent(window, finger).press(0, at, window);
+        QTest::qWait(30);
+        QTest::touchEvent(window, finger).release(0, at, window);
         QTest::qWait(60);
     };
     const auto text = [&](const QString &name) {
@@ -473,4 +483,137 @@ TEST_CASE("Tuckshop screen: rung in, packed into bags, each bag a child's for a 
     tap(u"seat0"_s);
     CHECK(pos.checkInfo()[u"seat"_s].toInt() == 0);
     CHECK_FALSE(named(root, u"course1"_s));
+}
+
+TEST_CASE("Tuckshop screen: a bag's name typed on the screen's keys", "[tuckshop][ui][keys]")
+{
+    auto l = test::loadTestLayout();
+    REQUIRE(l);
+    app::PosShared shared(tuckshopData(), nullptr);
+    app::PosService pos(&shared, u"Tuckshop"_s);
+    LayoutController c(*l);
+    c.setMealPeriod(u"lunch"_s);
+    c.setPos(&pos);
+    QQmlApplicationEngine engine;
+    engine.setInitialProperties({{u"controller"_s, QVariant::fromValue(&c)}, {u"width"_s, 1920}, {u"height"_s, 1080},
+                                 {u"touchKeyboard"_s, true}});
+    engine.loadFromModule("ViewTouch", "Main");
+    REQUIRE_FALSE(engine.rootObjects().isEmpty());
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    REQUIRE(window);
+    REQUIRE(QTest::qWaitForWindowExposed(window));
+    QTest::qWait(50);
+    QQuickItem *root = window->contentItem();
+    // A finger's tap (the till is a touch screen), not a mouse's click.
+    QPointingDevice *finger = QTest::createTouchDevice();
+    const auto tapItem = [&](QQuickItem *item) {
+        REQUIRE(item);
+        const QPoint at = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+        QTest::touchEvent(window, finger).press(0, at, window);
+        QTest::qWait(30);
+        QTest::touchEvent(window, finger).release(0, at, window);
+        QTest::qWait(60);
+    };
+    const auto shot = [&](const char *name) {
+        if (const QByteArray dir = qgetenv("VTM_SHOTS"); !dir.isEmpty())
+            window->grabWindow().save(QString::fromLocal8Bit(dir) + u'/' + QString::fromLatin1(name) + u".png"_s);
+    };
+    // A key of the screen's keyboard, by what it says.
+    const std::function<QQuickItem *(QQuickItem *, const QString &)> keyOf = [&](QQuickItem *from, const QString &says) -> QQuickItem * {
+        for (QQuickItem *item : from->childItems()) {
+            if (!item->isVisible())
+                continue;
+            if (item->property("text").toString() == says && item->parentItem() && item->parentItem()->property("modelData").isValid())
+                return item->parentItem();
+            if (QQuickItem *hit = keyOf(item, says))
+                return hit;
+        }
+        return nullptr;
+    };
+
+    REQUIRE(pos.addItem(u"classic-burger"_s));
+    QTest::qWait(60);
+    pos.selectLine(pos.lines().at(0).toMap()[u"id"_s].toLongLong());
+    tapItem(named(root, u"seatAdd"_s));   // + Bag: bag 1, the burger in it
+    tapItem(named(root, u"seat1"_s));     // in hand, touched again: whose?
+    QQuickItem *field = named(root, u"whoField"_s);
+    REQUIRE(field);
+    QTest::qWait(300);                    // the keys come up
+    QQuickItem *keys = named(root, u"screenKeyboard"_s);
+    REQUIRE(keys);
+    shot("tuckshop-keys-0-asked");
+    for (const QString &k : {u"S"_s, u"a"_s, u"m"_s}) {
+        QQuickItem *key = keyOf(keys, k);
+        INFO(k.toStdString());
+        tapItem(key);
+    }
+    CHECK(field->property("text").toString() == u"Sam"_s);
+    shot("tuckshop-keys-1-typed");
+    // Save, where a finger finds it: not under the keys.
+    QQuickItem *save = named(root, u"whoSave"_s);
+    REQUIRE(save);
+    const QPointF saveAt = save->mapToScene(QPointF(save->width() / 2, save->height() / 2));
+    const QPointF keysTop = keys->mapToScene(QPointF(0, 0));
+    INFO("Save at y " << saveAt.y() << ", the keys from y " << keysTop.y());
+    CHECK(saveAt.y() + save->height() / 2 <= keysTop.y());
+    tapItem(named(root, u"bagBreak2"_s));
+    tapItem(save);
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Sam"_s}});
+    CHECK(pos.checkInfo()[u"seatBreaks"_s].toMap() == QVariantMap{{u"1"_s, 2}});
+    shot("tuckshop-keys-2-saved");
+
+    // A key by what it is ("enter", "hide").
+    const std::function<QQuickItem *(QQuickItem *, const QString &)> keyNamed = [&](QQuickItem *from, const QString &what) -> QQuickItem * {
+        for (QQuickItem *item : from->childItems()) {
+            if (!item->isVisible())
+                continue;
+            if (item->property("modelData").toString() == what)
+                return item;
+            if (QQuickItem *hit = keyNamed(item, what))
+                return hit;
+        }
+        return nullptr;
+    };
+    // Asked again: the name is there, selected (typing starts it over);
+    // the keys' Enter saves what's typed.
+    tapItem(named(root, u"seat1"_s));
+    REQUIRE(named(root, u"whoField"_s));
+    QTest::qWait(300);
+    CHECK(named(root, u"whoField"_s)->property("text").toString() == u"Sam"_s);
+    tapItem(keyNamed(named(root, u"screenKeyboard"_s), u"shift"_s));
+    for (const QString &k : {u"P"_s, u"i"_s, u"p"_s})   // (p: a key over the order's side of the screen)
+        tapItem(keyOf(named(root, u"screenKeyboard"_s), k));
+    CHECK(named(root, u"whoField"_s));
+    tapItem(keyNamed(named(root, u"screenKeyboard"_s), u"enter"_s));
+    QTest::qWait(100);
+    CHECK_FALSE(named(root, u"whoField"_s));
+    INFO("names: " << QJsonDocument(QJsonObject::fromVariantMap(pos.checkInfo()[u"seatNames"_s].toMap())).toJson(QJsonDocument::Compact).toStdString()
+         << " breaks: " << QJsonDocument(QJsonObject::fromVariantMap(pos.checkInfo()[u"seatBreaks"_s].toMap())).toJson(QJsonDocument::Compact).toStdString()
+         << " customer: " << QJsonDocument(QJsonObject::fromVariantMap(pos.checkInfo()[u"customer"_s].toMap())).toJson(QJsonDocument::Compact).toStdString());
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Pip"_s}});
+
+    // A second bag, named with the keys put away first, then Save.
+    REQUIRE(pos.addItem(u"water"_s));
+    QTest::qWait(60);
+    pos.selectLine(pos.lines().at(1).toMap()[u"id"_s].toLongLong());
+    tapItem(named(root, u"seatAdd"_s));
+    CHECK(pos.checkInfo()[u"seat"_s].toInt() == 2);
+    tapItem(named(root, u"seat2"_s));
+    REQUIRE(named(root, u"whoField"_s));
+    QTest::qWait(300);
+    for (const QString &k : {u"M"_s, u"i"_s, u"a"_s})
+        tapItem(keyOf(named(root, u"screenKeyboard"_s), k));
+    tapItem(keyNamed(named(root, u"screenKeyboard"_s), u"hide"_s));
+    QTest::qWait(300);
+    shot("tuckshop-keys-3-keys-away");
+    REQUIRE(named(root, u"whoSave"_s));
+    tapItem(named(root, u"whoSave"_s));
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Pip"_s}, {u"2"_s, u"Mia"_s}});
+    // The names hold: another bag in hand, the first again, an item rung in.
+    tapItem(named(root, u"seat1"_s));
+    REQUIRE(pos.addItem(u"soda"_s));
+    QTest::qWait(60);
+    tapItem(named(root, u"seat0"_s));
+    CHECK(pos.checkInfo()[u"seatNames"_s].toMap() == QVariantMap{{u"1"_s, u"Pip"_s}, {u"2"_s, u"Mia"_s}});
+    shot("tuckshop-keys-4-held");
 }
