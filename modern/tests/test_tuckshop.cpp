@@ -546,3 +546,84 @@ TEST_CASE("Tuckshop screen: the Bags screen, as a finger uses it", "[tuckshop][u
     QTest::qWait(150);
     CHECK(text(u"who-bags"_s) == u"Bags"_s);
 }
+
+TEST_CASE("Order screen: + Name typed and saved with a finger", "[tuckshop][ui][truck]")
+{
+    auto l = test::loadTestLayout();
+    REQUIRE(l);
+    app::PosShared shared(tuckshopData(), nullptr);
+    app::PosService pos(&shared, u"Tuckshop"_s);
+    LayoutController c(*l);
+    c.setMealPeriod(u"lunch"_s);
+    c.setPos(&pos);
+    QQmlApplicationEngine engine;
+    engine.setInitialProperties({{u"controller"_s, QVariant::fromValue(&c)}, {u"width"_s, 1920}, {u"height"_s, 1080},
+                                 {u"touchKeyboard"_s, true}});
+    engine.loadFromModule("ViewTouch", "Main");
+    REQUIRE_FALSE(engine.rootObjects().isEmpty());
+    auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+    REQUIRE(window);
+    REQUIRE(QTest::qWaitForWindowExposed(window));
+    QTest::qWait(50);
+    QQuickItem *root = window->contentItem();
+    QPointingDevice *finger = QTest::createTouchDevice();
+    const auto tapItem = [&](QQuickItem *item) {
+        REQUIRE(item);
+        const QPoint at = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+        QTest::touchEvent(window, finger).press(0, at, window);
+        QTest::qWait(30);
+        QTest::touchEvent(window, finger).release(0, at, window);
+        QTest::qWait(80);
+    };
+    const std::function<QQuickItem *(QQuickItem *, const QString &)> key = [&](QQuickItem *from, const QString &k) -> QQuickItem * {
+        for (QQuickItem *item : from->childItems()) {
+            if (!item->isVisible())
+                continue;
+            if (item->property("modelData").typeId() == QMetaType::QString && item->property("modelData").toString() == k)
+                return item;
+            if (QQuickItem *hit = key(item, k))
+                return hit;
+        }
+        return nullptr;
+    };
+    const auto type = [&](const QString &word) {
+        QQuickItem *keys = named(root, u"screenKeyboard"_s);
+        REQUIRE(keys);
+        for (const QChar ch : word) {
+            if (ch.isUpper() != keys->property("shifted").toBool())
+                tapItem(key(keys, u"shift"_s));
+            tapItem(key(keys, QString(ch).toLower()));
+        }
+    };
+
+    // An order, as at the counter: + Name, the name on the screen's keys, Save.
+    REQUIRE(pos.addItem(u"soda"_s));
+    QTest::qWait(80);
+    tapItem(named(root, u"who-name"_s));
+    QTest::qWait(300);
+    REQUIRE(named(root, u"whoField"_s));
+    type(u"Maria"_s);
+    CHECK(named(root, u"whoField"_s)->property("text").toString() == u"Maria"_s);
+    tapItem(named(root, u"whoSave"_s));
+    QTest::qWait(150);
+    CHECK(pos.checkInfo()[u"customer"_s].toMap()[u"name"_s].toString() == u"Maria"_s);
+    CHECK(pos.checkInfo()[u"label"_s].toString() == u"#1 Maria"_s);
+
+    // Again with the keys' Enter.
+    tapItem(named(root, u"who-name"_s));
+    QTest::qWait(300);
+    REQUIRE(named(root, u"whoField"_s));
+    type(u"Sam"_s);
+    tapItem(key(named(root, u"screenKeyboard"_s), u"enter"_s));
+    QTest::qWait(150);
+    CHECK(pos.checkInfo()[u"customer"_s].toMap()[u"name"_s].toString() == u"Sam"_s);
+
+    // And the pager's number.
+    tapItem(named(root, u"who-pager"_s));
+    QTest::qWait(300);
+    REQUIRE(named(root, u"whoField"_s));
+    named(root, u"whoField"_s)->setProperty("text", u"7"_s);
+    tapItem(named(root, u"whoSave"_s));
+    QTest::qWait(150);
+    CHECK(pos.checkInfo()[u"pager"_s].toInt() == 7);
+}

@@ -1371,7 +1371,13 @@ Item {
         visible: mode !== "" && w.pos && (w.pos.hasCheck || mode === "quantity")
         color: Qt.rgba(0.06, 0.07, 0.09, 0.94)
         radius: 8
-        MouseArea { anchors.fill: parent; onClicked: sheet.mode = "" }   // outside the keys: close
+        // Outside the keys: close. (On a touch screen a finger on a key is
+        // offered here too: that isn't outside, and closing first lost what
+        // the key was for, the name Save was saving.)
+        MouseArea {
+            anchors.fill: parent
+            onClicked: mouse => { if (!w.onAKey(sheet, mapToItem(null, mouse.x, mouse.y))) sheet.mode = "" }
+        }
         // On a phone the check's text is small: its choices are made bigger.
         readonly property real big: w.zone && w.zone.controller && w.zone.controller.formFactor === "phone" ? 1.8 : 1
         readonly property real key: w.unit * 2.2 * big
@@ -1490,6 +1496,7 @@ Item {
                 fontScale: 0.42
                 text: qsTr("Save")
                 baseColor: Ui.go
+                takesTouch: true   // nothing behind sees the finger
                 onClicked: sheet.saveWho()
             }
             // Table tools
