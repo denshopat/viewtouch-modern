@@ -287,10 +287,21 @@ Document orderSlip(const Check &check, bool sent, const TicketContext &ctx)
 }
 
 Document kitchenTicket(const Check &check, const std::vector<OrderLine> &lines, const std::string &station,
-                       bool voids, const TicketContext &ctx)
+                       bool voids, const TicketContext &ctx, const Bag *bag)
 {
+    // A seat's guest: their name when someone said it, else "S2".
+    const auto seatLabel = [&](int seat) {
+        const std::string name = check.seatName(seat);
+        return name.empty() ? ctx.tr("S%1", {std::to_string(seat)}) : name;
+    };
     Document d;
     d.center(upper(station), true);
+    if (bag) {   // whose bag, and for which break: what the packer reads first
+        if (!bag->who.empty())
+            d.center(upper(bag->who), true, true);
+        if (!bag->forBreak.empty())
+            d.center(upper(bag->forBreak), true, true);
+    }
     if (voids)
         d.center(ctx.tr("*** VOID ***"), true, true);
     if (check.rush)
@@ -307,7 +318,7 @@ Document kitchenTicket(const Check &check, const std::vector<OrderLine> &lines, 
         if (!check.allergies.empty())
             d.center(upper(join(ctx.allergens(check.allergies), ", ")), true, true);
         for (const auto &[seat, list] : seatsHere)
-            d.center(ctx.tr("S%1", {std::to_string(seat)}) + ": " + upper(join(ctx.allergens(list), ", ")), true, true);
+            d.center(seatLabel(seat) + ": " + upper(join(ctx.allergens(list), ", ")), true, true);
     }
     if (check.dueAt > 0)
         d.center(upper(ctx.tr("Ready at %1", {ctx.time(check.dueAt)})), true, true);
@@ -320,19 +331,20 @@ Document kitchenTicket(const Check &check, const std::vector<OrderLine> &lines, 
     if (!check.customer.note.empty())
         d.text(upper(ctx.tr("Note")) + ": " + check.customer.note, Document::Align::Left, true);
     d.rule();
-    // A later course says so up front; each line says its seat.
+    // A later course says so up front; each line says its seat. (A bag's
+    // slip said both at the top: its lines are one child's, for one break.)
     int course = 0;
     for (const OrderLine &l : lines)
         course = std::max(course, l.course);
-    if (course > 1)
+    if (course > 1 && !bag)
         d.center(upper(ctx.tr("Course %1", {std::to_string(course)})), true, true);
     for (const OrderLine &l : lines) {
-        const std::string seat = l.seat > 0 ? ctx.tr("S%1", {std::to_string(l.seat)}) + " " : std::string();
+        const std::string seat = l.seat > 0 && !bag ? seatLabel(l.seat) + " " : std::string();
         if (l.isComment()) {
             d.text(seat + "** " + l.name + " **", Document::Align::Left, true);
             continue;
         }
-        if (!l.forKitchen())
+        if (!(bag ? Bag::holds(l) : l.forKitchen()))
             continue;
         d.text(seat + std::to_string(l.quantity) + " " + l.kitchenText(), Document::Align::Left, true, true);
         std::vector<std::string> hits;

@@ -1476,6 +1476,7 @@ bool PosService::addItem(const QString &idOrName)
         }
         line.seat = seat_;
         line.course = course_;
+        noHeldBreaks(c);
         // The × key: this many at once (6 Bud Light), one line.
         if (nextQty_ > 1 && line.weight == 0 && !line.isGiftCard()) {
             if (item->ticketCapacity > 0 && ticketsLeft(*item) < nextQty_) {
@@ -1978,6 +1979,7 @@ bool PosService::addComment(bool wholeOrder)
     OrderLine &note = c.addComment(ss(text));
     note.seat = seat_;
     note.course = course_;
+    noHeldBreaks(c);
     selectedLine_ = note.id;
     lineTouched_ = false;
     text_.clear();
@@ -2385,6 +2387,13 @@ QVariantMap PosService::checkInfo() const
              {u"bornBy"_s, i18n::locale().toString(QDateTime::fromMSecsSinceEpoch(now()).date().addYears(-s_->settings.idAge),
                                                     QLocale::LongFormat)}} : QVariant()},
         {u"allergies"_s, [c] { QStringList a; for (const std::string &x : c->allergies) a << qs(x); return a; }()},
+        // Seat -> who it is ({"2": "Sam 3B"}): a tuckshop's children.
+        {u"seatNames"_s, [c] {
+             QVariantMap m;
+             for (const auto &[seat, name] : c->seatNames)
+                 m.insert(QString::number(seat), qs(name));
+             return m;
+         }()},
         // Seat -> its guest's allergen ids ({"2": ["peanuts"]}).
         {u"seatAllergies"_s, [c] {
              QVariantMap m;

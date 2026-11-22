@@ -271,6 +271,39 @@ bool PosService::setCourse(int course)
     course_ = std::clamp(course, 1, 9);
     if (OrderLine *l = c->line(selectedLine_); l && lineTouched_ && !l->sent)
         l->course = course_;
+    noHeldBreaks(*c);
+    changed(*c);
+    return true;
+}
+
+void PosService::noHeldBreaks(Check &c) const
+{
+    // A tuckshop's courses are the day's breaks, not courses to fire one
+    // after the other: every bag is packed from the one order, none held.
+    if (!tuckshop())
+        return;
+    for (const OrderLine &l : c.lines)
+        if (!l.voided)
+            c.firedCourse = std::max(c.firedCourse, l.course);
+}
+
+bool PosService::nameSeat(int seat, const QString &name)
+{
+    if (!require(perm::Order, tr("Taking orders")))
+        return false;
+    if (seat < 1 || seat > 99)
+        return fail(tr("Choose who it is for first."));
+    // The first child starts the order (a tuckshop's: the bag before what's in it).
+    if (!current() && !startCheck(CheckType::Quick))
+        return false;
+    Check *c = current();
+    const QString who = name.simplified().left(40);
+    if (who.isEmpty())
+        c->seatNames.erase(seat);
+    else
+        c->seatNames[seat] = ss(who);
+    if (seat != seat_)
+        return setSeat(seat);   // theirs from here on (a touched line too)
     changed(*c);
     return true;
 }

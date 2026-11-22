@@ -309,6 +309,7 @@ const QHash<QString, PosService::Command> &PosService::commandTable()
         {u"checkedOn"_s, [](PosService &p, const QVariantList &) { return QVariant(p.checkedOn()); }},
         {u"setNextQuantity"_s, [](PosService &p, const QVariantList &a) { return QVariant(p.setNextQuantity(a.value(0).toInt())); }},
         {u"setSeat"_s, [](PosService &p, const QVariantList &a) { return QVariant(p.setSeat(a.value(0).toInt())); }},
+        {u"nameSeat"_s, [](PosService &p, const QVariantList &a) { return QVariant(p.nameSeat(a.value(0).toInt(), a.value(1).toString())); }},
         {u"saveCategory"_s, [](PosService &p, const QVariantList &a) { return QVariant(p.saveCategory(a.value(0).toMap())); }},
         {u"moveCategory"_s, [](PosService &p, const QVariantList &a) { return QVariant(p.moveCategory(a.value(0).toString(), a.value(1).toInt())); }},
         {u"moveCategoryTo"_s, [](PosService &p, const QVariantList &a) { return QVariant(p.moveCategoryTo(a.value(0).toString(), a.value(1).toInt())); }},

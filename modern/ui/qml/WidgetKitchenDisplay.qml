@@ -278,10 +278,11 @@ Item {
             // plates by seat and knows what was fired later.
             text: (ticketLine.line.heldHeader ? "⏸ " + ticketLine.line.name
                    : (!w.expo && ticketLine.line.made && !ticketLine.line.comment && !ticketLine.line.voided && !ticketLine.line.held ? "✓ " : "")
-                     + (ticketLine.line.seat > 0 ? "S" + ticketLine.line.seat + "  " : "")
+                     + (ticketLine.line.seat > 0 ? (ticketLine.line.who || "S" + ticketLine.line.seat) + "  " : "")
                      + (ticketLine.line.comment ? "** " + ticketLine.line.name + " **"
                                           : ticketLine.line.quantity + "  " + ticketLine.line.name)
-                     + (ticketLine.line.course > 1 && !ticketLine.line.held ? "   (" + qsTr("course %1").arg(ticketLine.line.course) + ")" : "")
+                     + (ticketLine.line.forBreak ? "   (" + ticketLine.line.forBreak + ")"   // a tuckshop's: the break it's for
+                        : ticketLine.line.course > 1 && !ticketLine.line.held ? "   (" + qsTr("course %1").arg(ticketLine.line.course) + ")" : "")
                      + (ticketLine.line.voided ? "   " + qsTr("VOID") : "")
                      + (w.expo ? "   " + (ticketLine.line.made ? "✓" : "· " + ticketLine.line.station) : ""))
             color: ticketLine.line.heldHeader || ticketLine.line.held ? "#6b6b6b"

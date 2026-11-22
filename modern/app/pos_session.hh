@@ -523,6 +523,7 @@ public:
     Q_INVOKABLE void orderReady(qint64 checkId) { invoke(QStringLiteral("orderReady"), {checkId}); }
     Q_INVOKABLE void orderPickedUp(qint64 checkId) { invoke(QStringLiteral("orderPickedUp"), {checkId}); }
     Q_INVOKABLE void setSeat(int seat) { invoke(QStringLiteral("setSeat"), {seat}); }
+    Q_INVOKABLE void nameSeat(int seat, const QString &name) { invoke(QStringLiteral("nameSeat"), {seat, name}); }
     Q_INVOKABLE void setNextQuantity(int quantity) { invoke(QStringLiteral("setNextQuantity"), {quantity}); }
     Q_INVOKABLE void checkedOn() { invoke(QStringLiteral("checkedOn"), {}); }
     Q_INVOKABLE void fastCash(qint64 cents) { invoke(QStringLiteral("fastCash"), {cents}); }

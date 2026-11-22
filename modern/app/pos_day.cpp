@@ -211,6 +211,7 @@ Check &PosService::splitOff(qint64 fromId)
     n.taxExempt = from.taxExempt;
     n.allergies = from.allergies;
     n.seatAllergies = from.seatAllergies;
+    n.seatNames = from.seatNames;
     n.rush = from.rush;
     n.vip = from.vip;
     n.firedCourse = from.firedCourse;

@@ -230,7 +230,7 @@ bool PosService::saveAdminRecord(const QString &panel, int index, const QVariant
         t.screen = ss(screen);
         if (record.contains(u"service"_s)) {
             const QString service = record.value(u"service"_s).toString();
-            if (!QStringList{QString(), u"restaurant"_s, u"foodTruck"_s, u"retail"_s}.contains(service))
+            if (!QStringList{QString(), u"restaurant"_s, u"foodTruck"_s, u"retail"_s, u"tuckshop"_s}.contains(service))
                 return fail(tr("Choose how the screen serves."));
             t.service = ss(service);
         }
@@ -330,7 +330,7 @@ bool PosService::saveAdminRecord(const QString &panel, int index, const QVariant
         s_->settings.storeName = ss(name);
         if (record.contains(u"serviceMode"_s)) {
             const QString mode = record.value(u"serviceMode"_s).toString();
-            if (!QStringList{QString(), u"restaurant"_s, u"foodTruck"_s, u"retail"_s}.contains(mode))
+            if (!QStringList{QString(), u"restaurant"_s, u"foodTruck"_s, u"retail"_s, u"tuckshop"_s}.contains(mode))
                 return fail(tr("Choose how the store serves."));
             s_->settings.serviceMode = mode == u"restaurant" ? std::string() : ss(mode);
         }
@@ -678,7 +678,8 @@ bool PosService::saveAdminRecord(const QString &panel, int index, const QVariant
                                         std::pair{u"voidReasons"_s, &s_->settings.voidReasons},
                                         std::pair{u"compReasons"_s, &s_->settings.compReasons},
                                         std::pair{u"wasteReasons"_s, &s_->settings.wasteReasons},
-                                        std::pair{u"expoSkips"_s, &s_->settings.expoSkips}}) {
+                                        std::pair{u"expoSkips"_s, &s_->settings.expoSkips},
+                                        std::pair{u"tuckshopBreaks"_s, &s_->settings.tuckshopBreaks}}) {
             if (!record.contains(key))
                 continue;
             list->clear();
@@ -686,6 +687,11 @@ bool PosService::saveAdminRecord(const QString &panel, int index, const QVariant
                 if (!line.trimmed().isEmpty() && list->size() < 40)
                     list->push_back(ss(line.trimmed().left(120)));
         }
+        // (A course is 1 to 9; with none said, the usual two.)
+        if (s_->settings.tuckshopBreaks.size() > 9)
+            s_->settings.tuckshopBreaks.resize(9);
+        if (s_->settings.tuckshopBreaks.empty())
+            s_->settings.tuckshopBreaks = PosSettings{}.tuckshopBreaks;
         if (record.contains(u"kitchenStations"_s)) {
             // Names in; ids stay the same for names already there.
             std::vector<Station> stations;

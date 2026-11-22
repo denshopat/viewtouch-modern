@@ -38,10 +38,22 @@ Document receipt(const core::Check &check, const TicketContext &ctx);
 // counter; the name, what was ordered and the total; `sent`: being made.
 Document orderSlip(const core::Check &check, bool sent, const TicketContext &ctx);
 
+// A tuckshop's bag: one child's items for one of the day's breaks. Its
+// slip is packed from and goes in the bag: the child and the break on top,
+// big, and everything that's theirs (a drink the kitchen doesn't make too).
+struct Bag {
+    std::string who;        // "Sam 3B" (empty: nobody was named)
+    std::string forBreak;   // "Little Lunch" (empty: no break said)
+    // What goes in a bag: everything but gift cards, fees and the other
+    // pieces of a shared item.
+    static bool holds(const core::OrderLine &l) { return !l.isGiftCard() && !l.isFee() && l.share <= 1; }
+};
+
 // Kitchen / bar ticket for the given lines (legacy Check::PrintWorkOrder).
-// `voids` prints the lines as cancelled.
+// `voids` prints the lines as cancelled. `bag`: a tuckshop's bag slip, the
+// lines one child's for one break.
 Document kitchenTicket(const core::Check &check, const std::vector<core::OrderLine> &lines,
-                       const std::string &station, bool voids, const TicketContext &ctx);
+                       const std::string &station, bool voids, const TicketContext &ctx, const Bag *bag = nullptr);
 
 // Any report, e.g. the end-of-day summary.
 Document reportTicket(const core::Report &report, const TicketContext &ctx);

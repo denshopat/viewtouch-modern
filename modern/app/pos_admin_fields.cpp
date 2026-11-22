@@ -359,8 +359,14 @@ QVariantList PosService::adminFieldsAll(const QString &panel)
             with(field(u"serviceMode"_s, tr("How you serve"), u"enum"_s,
                        tr("Restaurant: tables and logins. Food truck: no login, straight to ordering and paying; "
                           "a manager's PIN opens the Manager screens. Retail: logins, the items first, no tables. "
+                          "Tuckshop: a food truck's counter where one order is several children's bags, each for a break. "
                           "Each screen can say otherwise (Terminals).")),
-                 u"options"_s, options({{"", "Restaurant"}, {"foodTruck", "Food truck"}, {"retail", "Retail"}})),
+                 u"options"_s, options({{"", "Restaurant"}, {"foodTruck", "Food truck"}, {"retail", "Retail"},
+                                        {"tuckshop", "Tuckshop"}})),
+            asRows(field(u"tuckshopBreaks"_s, tr("Tuckshop: the breaks"), u"text"_s,
+                         tr("The day's breaks, the first one first (Little Lunch, Big Lunch). On the order, an item is "
+                            "a child's and for one of them; each child's bag for each break prints as a slip of its own.")),
+                   tr("+ Add a break")),
             field(u"truckNoLogin"_s, tr("Food truck: nobody logs in (the Counter)"), u"bool"_s,
                   tr("Off: each shift starts with a PIN (they're clocked in) and their sales and tips are theirs until "
                      "Log Out, at the end of their shift. On: the screen opens on the menu, sales are the Counter's.")),
@@ -794,9 +800,10 @@ QVariantList PosService::adminFieldsAll(const QString &panel)
             with(field(u"service"_s, tr("How this screen serves"), u"enum"_s,
                        tr("A restaurant's food truck, say. Store setting: %1.")
                            .arg(s_->settings.serviceMode == "foodTruck" ? tr("Food truck")
-                                : s_->settings.serviceMode == "retail" ? tr("Retail") : tr("Restaurant"))),
+                                : s_->settings.serviceMode == "retail" ? tr("Retail")
+                                : s_->settings.serviceMode == "tuckshop" ? tr("Tuckshop") : tr("Restaurant"))),
                  u"options"_s, options({{"", "Store setting"}, {"restaurant", "Restaurant"}, {"foodTruck", "Food truck"},
-                                        {"retail", "Retail"}})),
+                                        {"retail", "Retail"}, {"tuckshop", "Tuckshop"}})),
             // Choices filled in by the screen (its looks).
             field(u"look"_s, tr("Look"), u"look"_s, tr("This screen's colors; the store's look elsewhere.")),
             with(field(u"textSize"_s, tr("Text size"), u"enum"_s,

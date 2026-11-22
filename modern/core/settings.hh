@@ -5,6 +5,7 @@
 #include "core/inventory.hh"
 #include "core/tax.hh"
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -157,9 +158,26 @@ struct PosSettings {
     bool setupDone = false;   // the setup guide was finished (it opens for managers until then)
     // How the store serves (each terminal can say otherwise): "restaurant"
     // (empty: tables, logins), "foodTruck" (no login: straight to ordering
-    // and paying; a manager's PIN for the Manager screens) or "retail"
-    // (logins, the items first: no tables, no kitchen).
+    // and paying; a manager's PIN for the Manager screens), "retail"
+    // (logins, the items first: no tables, no kitchen) or "tuckshop" (a
+    // food truck's counter where one order is several children's bags).
     std::string serviceMode;
+    // A tuckshop's breaks, the first one first. One order holds the bags of
+    // several children: an item is a child's (its seat, named:
+    // Check::seatNames) and for a break (its course: 1 the first of these).
+    // Each child's bag for each break is a slip of its own.
+    std::vector<std::string> tuckshopBreaks{"Little Lunch", "Big Lunch"};
+    // The store is a tuckshop, or one of its screens serves as one.
+    bool servesTuckshop() const
+    {
+        return serviceMode == "tuckshop"
+               || std::ranges::any_of(terminals, [](const TerminalConfig &t) { return t.service == "tuckshop"; });
+    }
+    // The break that course `course` is (1: the first); empty: none of them.
+    std::string tuckshopBreak(int course) const
+    {
+        return course >= 1 && course <= int(tuckshopBreaks.size()) ? tuckshopBreaks[course - 1] : std::string();
+    }
     // Food truck: each shift starts with a PIN (their sales and tips, their
     // clock-in) and ends with Log Out; on here, nobody logs in and sales are
     // the Counter's. And whether an order needs a name before Send or Pay

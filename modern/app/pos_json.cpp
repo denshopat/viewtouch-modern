@@ -218,6 +218,11 @@ QJsonObject toJson(const Check &c)
             for (const auto &[seat, list] : c.seatAllergies)
                 o.insert(QString::number(seat), strings(list));
             return o;
+        }()}, {u"seatNames"_s, [&c] {
+            QJsonObject o;
+            for (const auto &[seat, name] : c.seatNames)
+                o.insert(QString::number(seat), qs(name));
+            return o;
         }()}, {u"coupons"_s, strings(c.coupons)}, {u"hold"_s, [&c] {
             if (c.hold.empty())
                 return QJsonValue();
@@ -387,6 +392,10 @@ std::optional<Check> checkFromJson(const QJsonObject &o)
     for (auto it = seatAllergies.begin(); it != seatAllergies.end(); ++it)
         if (const int n = it.key().toInt(); n > 0 && !it.value().toArray().isEmpty())
             c.seatAllergies[n] = strings(it.value().toArray());
+    const QJsonObject seatNames = o.value(u"seatNames").toObject();
+    for (auto it = seatNames.begin(); it != seatNames.end(); ++it)
+        if (const int n = it.key().toInt(); n > 0 && !it.value().toString().isEmpty())
+            c.seatNames[n] = ss(it.value().toString());
     c.coupons = strings(o.value(u"coupons").toArray());
     if (const QJsonObject h = o.value(u"hold").toObject(); !h.isEmpty()) {
         c.hold.reference = ss(h.value(u"reference").toString());
@@ -1176,6 +1185,7 @@ QJsonObject toJson(const PosSettings &s)
         {u"problemsSeen"_s, qint64(s.problemsSeen)}, {u"labelPrinter"_s, qs(s.labelPrinter)},
         {u"wasteReasons"_s, [&] { QJsonArray a; for (const std::string &r : s.wasteReasons) a.append(qs(r)); return a; }()},
         {u"expoSkips"_s, [&] { QJsonArray a; for (const std::string &r : s.expoSkips) a.append(qs(r)); return a; }()},
+        {u"tuckshopBreaks"_s, strings(s.tuckshopBreaks)},
         {u"voidReasons"_s, [&] { QJsonArray a; for (const std::string &r : s.voidReasons) a.append(qs(r)); return a; }()},
         {u"compReasons"_s, [&] { QJsonArray a; for (const std::string &r : s.compReasons) a.append(qs(r)); return a; }()},
         {u"cashDenominations"_s, [&] { QJsonArray a; for (std::int64_t c : s.cashDenominations) a.append(qint64(c)); return a; }()},
@@ -1483,7 +1493,8 @@ PosSettings settingsFromJson(const QJsonObject &o)
     s.problemsSeen = i64(o.value(u"problemsSeen"));
     s.labelPrinter = ss(o.value(u"labelPrinter").toString());
     for (auto [key, list] : {std::pair{u"voidReasons", &s.voidReasons}, std::pair{u"compReasons", &s.compReasons},
-                             std::pair{u"wasteReasons", &s.wasteReasons}, std::pair{u"expoSkips", &s.expoSkips}}) {
+                             std::pair{u"wasteReasons", &s.wasteReasons}, std::pair{u"expoSkips", &s.expoSkips},
+                             std::pair{u"tuckshopBreaks", &s.tuckshopBreaks}}) {
         if (!o.value(QStringView(key)).isArray())
             continue;
         list->clear();
@@ -1491,6 +1502,10 @@ PosSettings settingsFromJson(const QJsonObject &o)
             if (!v.toString().trimmed().isEmpty())
                 list->push_back(ss(v.toString().trimmed()));
     }
+    if (s.tuckshopBreaks.size() > 9)
+        s.tuckshopBreaks.resize(9);
+    if (s.tuckshopBreaks.empty())
+        s.tuckshopBreaks = PosSettings{}.tuckshopBreaks;
     if (o.value(u"cashDenominations").isArray()) {
         std::vector<std::int64_t> pieces;
         for (const QJsonValue &v : o.value(u"cashDenominations").toArray())

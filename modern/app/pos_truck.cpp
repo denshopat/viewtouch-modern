@@ -31,7 +31,7 @@ QString PosService::serviceMode() const
     for (const TerminalConfig &t : s_->settings.terminals)
         if (qs(t.name) == terminal_ && !t.service.empty())
             mode = t.service;
-    if (mode == "foodTruck" || mode == "retail")
+    if (mode == "foodTruck" || mode == "retail" || mode == "tuckshop")
         return qs(mode);
     return u"restaurant"_s;
 }
@@ -50,7 +50,15 @@ QVariantMap PosService::serviceInfo() const
     for (const TimePunch &p : s_->punches)
         if (!userId_.empty() && p.employeeId == userId_ && p.open())
             since = i18n::timeText(QDateTime::fromMSecsSinceEpoch(p.clockIn).time());
-    return {{u"mode"_s, serviceMode()},
+    // A tuckshop's screens are a food truck's (its pages, its buttons): the
+    // mode the pages go by is the truck's, and `tuckshop` says the rest.
+    QStringList breaks;
+    if (tuckshop())
+        for (const std::string &b : s_->settings.tuckshopBreaks)
+            breaks << qs(b);
+    return {{u"mode"_s, tuckshop() ? u"foodTruck"_s : serviceMode()},
+            {u"tuckshop"_s, tuckshop()},
+            {u"breaks"_s, breaks},
             {u"since"_s, since},
             {u"counter"_s, truck && !userId_.empty() && userId_ == counterUser_},
             {u"steppedIn"_s, truck && !counterUser_.empty() && !userId_.empty() && userId_ != counterUser_},

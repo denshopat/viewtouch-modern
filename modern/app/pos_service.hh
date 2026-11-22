@@ -752,7 +752,12 @@ public:
     // --- seats and courses --------------------------------------------------------
     // The seat / course new items go to; also changes the selected line.
     bool setSeat(int seat);
+    // Who seat `seat` is ("Sam 3B"; empty: nobody in particular again), and
+    // it's the seat for what's rung in next. A tuckshop's children.
+    bool nameSeat(int seat, const QString &name);
     bool setCourse(int course);
+    // A tuckshop's check holds no course back (its courses are breaks).
+    void noHeldBreaks(core::Check &c) const;
     // Send the next course that is on hold.
     bool fireCourse();
     // Course pacing: fire the next held course in `minutes` (0: now; -1: never mind).
@@ -1189,15 +1194,19 @@ public:
     QVariantMap kioskMenu() const override;
     QVariantMap menuBoard() const override;   // a TV's menu (Terminals: Menu board)
 
-    // How this screen serves: "restaurant", "foodTruck" or "retail" (the
-    // terminal's setting, else the store's).
+    // How this screen serves: "restaurant", "foodTruck", "retail" or
+    // "tuckshop" (the terminal's setting, else the store's).
     QString serviceMode() const;
+    // A tuckshop's screen: a food truck's counter, and an order's items are
+    // children's (seats with names), each for one of the day's breaks (its
+    // course): a bag a child a break (PosSettings::tuckshopBreaks).
+    bool tuckshop() const { return serviceMode() == u"tuckshop" && !selfOrder_; }
     // A food truck screen: nobody logs in. It runs as the counter (the
     // built-in Counter, or whoever said they're working: Store Settings ->
     // ask who's working), straight to ordering and paying. Someone's PIN
     // steps in (a manager, for the Manager screens), and logging out goes
     // back to the counter, the order in progress still open.
-    bool counterMode() const { return serviceMode() == u"foodTruck" && !selfOrder_; }
+    bool counterMode() const { return (serviceMode() == u"foodTruck" || serviceMode() == u"tuckshop") && !selfOrder_; }
     // Quick orders called by their number: a food truck's, or a restaurant's
     // at the counter (Store Settings: Restaurant: call orders by number).
     bool numbersOrders() const;
